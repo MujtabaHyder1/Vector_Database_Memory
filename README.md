@@ -269,6 +269,6 @@ After completing this notebook, you'll understand:
 ---
 
 **Course**: Employability Life - Agentic AI & RAG  
-**Week**: 4 (Vector Database Memory)  
-**Author**: Your Name  
+**Sprint**: 2 (Vector Database Memory)  
+**Author**: Mujtaba Hyder 
 **Date**: 2026-08-29
