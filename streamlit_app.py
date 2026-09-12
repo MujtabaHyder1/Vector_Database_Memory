@@ -1,3 +1,8 @@
+import os
+
+os.environ["TQDM_DISABLE"] = "1"
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+
 import streamlit as st
 
 from tech_agent import OllamaClient, TechDepartmentAgent, TechMemoryRAG

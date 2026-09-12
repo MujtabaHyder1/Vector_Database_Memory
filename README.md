@@ -1,117 +1,76 @@
-# Vector Database Memory for Stateful Agent Systems
+# Vector Database Memory — Tech Department Support Agent
 
-**Program**: Employability Life - Agentic AI & RAG (Week 4)  
+**Program**: Employability Life — Agentic AI & RAG (Week 4)  
 **Date**: September 2026  
 **Team**: Dune  
-**Status**: ✅ Production-Ready with Ollama Integration
+**Status**: ✅ Production-Ready
 
 ---
 
 ## Overview
 
-This is a **complete stateful agent system with persistent vector memory** that learns and improves over time. It demonstrates how agents move beyond stateless chatbots to become learning systems that maintain context, improve responses, and share knowledge across teams.
+A **stateful AI support agent** for company tech departments that uses **persistent vector memory** (ChromaDB), **policy RAG**, and a **local LLM** (Ollama) to answer employee questions about devices, software, access, and IT policies.
 
-### Key Features
+Unlike a stateless chatbot, this agent:
 
-✅ **Ollama LLM Integration** - Local language model for actual response generation  
-✅ **Persistent Vector Memory** - Survives session restarts using ChromaDB  
-✅ **Episodic & Declarative Memory** - Follows Week 1 four-layer architecture  
-✅ **Multi-Agent Learning** - Agents share knowledge from a single database  
-✅ **Before/After Proof** - Demonstrates memory actually improves responses  
-✅ **Memory-Informed Generation** - LLM uses retrieved context for responses  
+- **Remembers every conversation** (episodic memory) and uses past interactions to improve future answers.
+- **Stores taught facts and instructions** (declarative memory) that persist across sessions.
+- **Retrieves relevant policy** sections via semantic search before generating an answer.
+- **Creates and tracks tickets** for device requests and device issues.
+- **Falls back gracefully** to retrieved context when the LLM is unavailable.
 
 ---
 
 ## Architecture
 
-### Four-Layer Memory Model (Week 1)
-
 ```
-PERCEPTION    (Input: "Can I work from home?")
-    ↓
-REASONING     (Retrieve relevant memories: policies, past interactions)
-    ↓
-MEMORY        4 Types:
-              • Episodic: "Employee asked this before"
-              • Declarative: "Remote work approved 2-3 days/week"
-              • Error: "Forgot to mention probation restrictions"
-              • Procedural: Tools & capabilities
-    ↓
-ACTION        Generate response using LLM + memory context
-```
-
-### System Components
-
-1. **OllamaLLM** - Interface to local Ollama model
-   - Generates responses informed by memory context
-   - Real LLM, not keyword matching
-
-2. **PersistentVectorMemoryManager** - Memory storage & retrieval
-   - ChromaDB for vector database
-   - Persistent storage to disk
-   - Semantic search with embeddings
-
-3. **MemoryAwareAgent** - Stateful agent with learning
-   - Retrieves relevant memories
-   - Processes queries with LLM
-   - Stores interactions as episodic memory
-   - Learns facts and errors
-
-4. **Memory Types**
-   - **Episodic**: Specific past interactions + outcomes
-   - **Declarative**: Facts, rules, policies
-   - **Error**: Mistakes to learn from
-
----
-
-## Before/After: How Memory Improves Responses
-
-### Without Memory (Cold Start)
-
-```
-Query: "Can I work from home?"
-↓
-LLM: [No context] → Generic response
-Result: May miss policies, incomplete
+┌────────────────────────────────────────────────────────────────┐
+│                      Streamlit UI                              │
+│   Chat · Sidebar forms · /commands · Metrics                   │
+└────────────────────────┬───────────────────────────────────────┘
+                         │
+              ┌──────────▼──────────┐
+              │ TechDepartmentAgent │
+              │   answer()          │
+              │   submit_device_*() │
+              │   teach_fact()      │
+              └──────────┬──────────┘
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+  ┌───────▼────────┐          ┌────────▼────────┐
+  │ TechMemoryRAG  │          │  OllamaClient   │
+  │  search()      │          │  generate()     │
+  │  remember_*()  │          │  is_available() │
+  │  create_ticket()│          └────────────────┘
+  └───────┬────────┘
+          │
+  ┌───────▼──────────────────────────────┐
+  │           ChromaDB (Persistent)       │
+  │                                       │
+  │  tech_policy_rag        6 sections    │
+  │  tech_episodic_memory   conversations │
+  │  tech_declarative_memory facts/rules  │
+  │  tech_tickets           requests/issues│
+  └───────────────────────────────────────┘
+          │
+  ┌───────▼───────────────┐
+  │  SentenceTransformer  │
+  │  all-MiniLM-L6-v2     │
+  │  384-dim embeddings   │
+  └───────────────────────┘
 ```
 
-### With Memory (Memory-Informed)
+### Memory Model
 
-```
-Query: "Can I work from home?"
-↓
-Retrieve: "Remote work approved 2-3 days/week"
-Retrieve: "3-month probation restriction"
-↓
-LLM: [With context] → Informed response
-Result: Accurate, policy-compliant ✓
-```
+| Memory Type | Collection | Purpose | Example |
+|---|---|---|---|
+| **Policy RAG** | `tech_policy_rag` | Company policies split by markdown section | "Standard laptop budget is 2000 USD" |
+| **Episodic** | `tech_episodic_memory` | Past conversations auto-saved after every interaction | "User asked about VPN crash — agent suggested reinstall" |
+| **Declarative** | `tech_declarative_memory` | Facts and instructions taught by users or seeded at init | "Always require manager approval for laptops over $1500" |
+| **Tickets** | `tech_tickets` | Device requests and device issues with structured fields | TECH-20260912-EDBD43 — Laptop request for John Smith |
 
----
-
-## Multi-Agent Learning
-
-```
-┌─────────────┐
-│  HR Agent   │──→ Processes HR questions
-│             │    Stores in Episodic Memory
-└──────┬──────┘
-       │ (shared)
-       ↓
-┌─────────────┐
-│   SHARED    │  ← Single persistent database
-│   MEMORY    │    Both agents read/write
-│   DATABASE  │
-└──────┬──────┘
-       │ (shared)
-       ↓
-┌─────────────┐
-│  IT Agent   │──→ Processes IT questions
-│             │    Retrieves HR's learnings
-└─────────────┘
-```
-
-**Result**: Knowledge learned by HR agent automatically helps IT agent. No separate training needed.
+All four collections use **cosine similarity** with **HNSW indexing** for O(log n) retrieval.
 
 ---
 
@@ -119,293 +78,249 @@ Result: Accurate, policy-compliant ✓
 
 ### Prerequisites
 
-1. **Python 3.8+** with pip
-2. **Ollama** installed and running locally
+| Requirement | Version | Purpose |
+|---|---|---|
+| Python | 3.10+ | Runtime |
+| Ollama | Latest | Local LLM server |
+| mistral model | — | Default LLM (configurable) |
 
-### Streamlit Tech Department Agent
-
-This repo now also includes a runnable tech department support agent UI:
+### 1. Clone and install
 
 ```bash
+git clone https://github.com/MujtabaHyder1/Vector_Database_Memory.git
+cd Vector_Database_Memory
+
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
 pip install -r requirements.txt
+```
+
+### 2. Start Ollama
+
+```bash
+# Terminal 1 — start the server
 ollama serve
+
+# Terminal 2 — pull the model
 ollama pull mistral
+```
+
+> The agent works without Ollama too — it falls back to showing retrieved policy context directly.
+
+### 3. Run the Streamlit app
+
+```bash
 streamlit run streamlit_app.py
 ```
 
-The Streamlit app adds:
+Open **http://localhost:8501** in your browser.
 
-- Policy RAG from `knowledge_base/tech_department_policies.md`
-- Persistent ChromaDB memory in `.tech_agent_memory/`
-- Episodic memory for past conversations, requests, issues, and tickets
-- Declarative memory for facts, policies, and remembered agent instructions
-- Device request and device issue forms
-- Chat commands: `/help`, `/policy`, `/memory`, `/remember`, `/stats`, `/request`, `/issue`
-- Ollama-backed answers with a policy-grounded fallback when Ollama is unavailable
-
-To run the notebook test for this app:
+### 4. (Optional) Run the test notebook
 
 ```bash
-python -m nbconvert --to notebook --execute Tech_Department_Agent_Test.ipynb --output Tech_Department_Agent_Test.executed.ipynb
-```
-
-### Installation Steps
-
-#### 1. Install Ollama
-
-```bash
-# Download from https://ollama.ai
-# Or use package manager:
-# macOS: brew install ollama
-# Linux: curl https://ollama.ai/install.sh | sh
-# Windows: Download from ollama.ai
-```
-
-#### 2. Start Ollama
-
-```bash
-# Terminal 1: Start the Ollama server
-ollama serve
-
-# Terminal 2: Pull a model (mistral recommended)
-ollama pull mistral
-# or: ollama pull llama2, ollama pull neural-chat
-```
-
-#### 3. Run the Notebook
-
-```bash
-# Navigate to project directory
-cd Desktop/Vector_Database_Memory-main
-
-# Install Python dependencies (auto-installed in notebook)
-pip install chromadb sentence-transformers requests pandas numpy
-
-# Start Jupyter
-jupyter notebook Vector_Database_Memory.ipynb
-```
-
-#### 4. Execute All Cells
-
-Run cells in order (top to bottom):
-- Cell 1-2: Setup dependencies
-- Cell 3b: Connect to Ollama
-- Cell 5-7: Initialize memory system
-- Cell 11-12: Load facts
-- Cell 13-15: Before/After demo
-- Cell 16-19: Verification
-
----
-
-## What Each Section Does
-
-### Section 1-3: Setup
-- Install dependencies
-- Import libraries
-- Initialize Ollama connection
-
-### Section 4-5: Memory Structure
-- Define episodic, declarative, error memory types
-- Create persistent vector manager
-
-### Section 6-7: Initialize System
-- Create shared memory database
-- Create HR and IT agents (share memory)
-- Load initial facts
-
-### Section 8-9: Before/After Demo
-- **Phase 1**: Process queries WITHOUT memory context
-- **Phase 2**: Same queries WITH memory context
-- Compare responses to show improvement
-
-### Section 10-11: Multi-Agent Learning
-- HR agent processes queries (stores episodic memories)
-- IT agent retrieves HR's memories + IT facts
-- Demonstrate knowledge transfer
-
-### Section 12-14: Error Learning
-- Log common mistakes
-- Agents learn to avoid repeating errors
-- Errors become searchable in memory
-
-### Section 15-16: Persistence
-- Show stored memory statistics
-- Explain how memory survives restarts
-- Point to storage directory
-
-### Section 17-19: Verification
-- Check all components working
-- Verify all requirements met
-- Print checklist
-
----
-
-## Memory Flow Example
-
-```
-Input: "I need a new laptop"
-↓
-[Agent Retrieves Context]
-- Episodic: "Previous laptop request took 3 days"
-- Declarative: "Budget: $2000, Timeline: 5 business days"
-- Error: "Mention budget upfront to avoid disappointment"
-↓
-[LLM Processes with Context]
-OllamaLLM(
-  query="I need a new laptop",
-  context="Budget limit: $2000. Approved within 5 days. Previous similar request: accepted."
-)
-↓
-Response: "You can request a new laptop. Budget limit is $2000, 
-and approval typically takes 5 business days. Submit via IT portal. 
-Based on previous requests, the process is straightforward."
-↓
-[Store Interaction as Memory]
-Episodic Memory: "Employee requested laptop → approved within 5 days"
-↓
-[Other Agents Can Retrieve]
-IT Agent: "Another laptop request? I found similar past case..."
+python -m nbconvert --to notebook --execute Tech_Department_Agent_Test.ipynb \
+  --output Tech_Department_Agent_Test.executed.ipynb
 ```
 
 ---
 
-## How It Connects to Previous Weeks
+## Features
 
-### Week 2: Vector Embeddings & Semantic Search
-- We use `all-MiniLM-L6-v2` embeddings (384-dim)
-- ChromaDB for vector storage
-- Cosine similarity for relevance
+### Chat Commands
 
-### Week 3: RAG Pipelines
-- **Retrieval**: Get facts from memory
-- **Augmented**: Pass to LLM as context
-- **Generation**: LLM generates response
+| Command | Description |
+|---|---|
+| `/help` | Show all available commands |
+| `/policy <query>` | Search tech policies only |
+| `/memory <query>` | Search policies + tickets + episodic + declarative memory |
+| `/remember <fact>` | Save a declarative memory for future answers |
+| `/stats` | Show counts for all memory collections |
+| `/request` | Redirect to the Device Request sidebar form |
+| `/issue` | Redirect to the Device Issue sidebar form |
 
-### Week 4 (This): Stateful Agents
-- Add persistent memory layer
-- Add multi-agent learning
-- Add episodic + declarative memory types
-- Complete stateful agent system
+### Sidebar
+
+- **Metrics panel** — live counts for policy sections, tickets, episodic memory, declarative memory.
+- **Teach Declarative Memory** — type a fact or instruction and the agent will remember it permanently.
+- **Device Request form** — structured form capturing employee, department, manager, device type, work mode, business reason, preferred date.
+- **Device Issue form** — structured form capturing employee, device/asset tag, urgency, issue summary, troubleshooting tried.
+
+### Answer Generation Flow
+
+```
+User message
+    │
+    ├── Is it a /command? ──► Handle command directly
+    │
+    └── Regular question
+            │
+            ▼
+        ┌───────────────────────────┐
+        │  TechMemoryRAG.search()   │
+        │  Query all 4 collections  │
+        │  Sort by cosine similarity│
+        └───────────┬───────────────┘
+                    │
+                    ▼
+        ┌───────────────────────────┐
+        │  Build prompt with top 6  │
+        │  retrieved context chunks │
+        └───────────┬───────────────┘
+                    │
+            ┌───────┴───────┐
+            │               │
+     Ollama available?   Not available
+            │               │
+            ▼               ▼
+     LLM generates     Fallback: show
+     grounded answer    retrieved context
+            │               │
+            └───────┬───────┘
+                    │
+                    ▼
+        ┌───────────────────────────┐
+        │  Save to episodic memory  │
+        │  (auto, every interaction)│
+        └───────────────────────────┘
+```
+
+### Ticket Priority Classification
+
+Device issues are auto-classified by scanning the issue text:
+
+| Priority | Trigger keywords |
+|---|---|
+| **Critical** | lost, stolen, security, cannot work, unable to work, production, executive |
+| **High** | vpn, crash, meeting, camera, microphone, blocked, urgent |
+| **Normal** | Everything else |
+
+---
+
+## File Structure
+
+```
+Vector_Database_Memory/
+├── streamlit_app.py                  Streamlit UI (chat + sidebar forms)
+├── tech_agent.py                     Core agent: OllamaClient, TechMemoryRAG,
+│                                       TechDepartmentAgent (487 lines)
+├── knowledge_base/
+│   └── tech_department_policies.md   Policy document (6 sections, 70 lines)
+├── .tech_agent_memory/               ChromaDB persistent storage (auto-created)
+├── Vector_Database_Memory.ipynb      Original Week 4 notebook (HR/IT agents)
+├── Tech_Department_Agent_Test.ipynb  Test notebook for tech agent
+├── requirements.txt                  Python dependencies
+├── runtime.txt                       Python version spec
+├── README.md                         This file
+├── SRS.md                            Software Requirements Specification
+├── COMPLETION_SUMMARY.md             Verification and test results
+├── START_HERE.md                     Legacy quick-start guide
+└── .gitignore                        Git exclusions
+```
 
 ---
 
 ## Technical Specifications
 
-### Storage
-- **Format**: ChromaDB (persistent)
-- **Location**: `~/.vector_memory/db/`
-- **Indexing**: HNSW (O(log n) retrieval)
-- **Embedding**: all-MiniLM-L6-v2 (384-dim)
+### Embeddings & Vector Store
+
+| Parameter | Value |
+|---|---|
+| Model | `all-MiniLM-L6-v2` (SentenceTransformers) |
+| Dimensions | 384 |
+| Distance metric | Cosine |
+| Indexing | HNSW |
+| Backend | ChromaDB `PersistentClient` |
+| Storage path | `.tech_agent_memory/` (project-local) |
 
 ### LLM
-- **Provider**: Ollama (local)
-- **Model**: mistral (can switch to llama2, neural-chat, etc.)
-- **Response**: Context-aware, informed by retrieved memories
 
-### Memory
-- **Episodic**: Specific past interactions + outcomes
-- **Declarative**: Facts, policies, procedures
-- **Error**: Mistakes + resolutions
-- **Growth**: Append-only (memories never deleted)
+| Parameter | Value |
+|---|---|
+| Provider | Ollama (local) |
+| Default model | `mistral` |
+| API endpoint | `http://localhost:11434/api/generate` |
+| Temperature | 0.2 |
+| Timeout | 90 seconds |
+| Fallback | Policy-context response when Ollama is unavailable |
 
 ### Performance
-- **Query → Response**: ~2-10 seconds (depends on LLM)
-- **Memory Retrieval**: <100ms (HNSW indexing)
-- **Scalability**: Tested up to 10K+ memories
+
+| Operation | Latency |
+|---|---|
+| Memory retrieval (HNSW) | < 100 ms |
+| LLM response generation | 2–10 s (depends on model + hardware) |
+| Policy ingestion (first run) | ~5 s (6 sections, embedding + insert) |
 
 ---
 
-## Files in This Repository
+## How It Connects to Previous Weeks
+
+| Week | Concept | How it's used here |
+|---|---|---|
+| **Week 2** | Vector embeddings & semantic search | `all-MiniLM-L6-v2` embeds queries and documents; ChromaDB stores and retrieves by cosine similarity |
+| **Week 3** | RAG pipelines | Retrieve policy + memory → Augment the prompt → Generate answer via Ollama |
+| **Week 4** | Stateful agents with persistent memory | Episodic + declarative memory persists across sessions; agent learns from every interaction |
+
+---
+
+## Dependencies
 
 ```
-Vector_Database_Memory-main/
-├── Vector_Database_Memory.ipynb    Main notebook (28 cells)
-├── README.md                       This file
-├── SRS.md                         Requirements & specifications
-├── COMPLETION_SUMMARY.md          Verification results
-└── .gitignore                     Git configuration
+chromadb
+sentence-transformers
+requests
+streamlit
+numpy
+nbconvert
 ```
+
+All are listed in `requirements.txt`.
 
 ---
 
 ## Troubleshooting
 
-### "Cannot connect to Ollama"
+### Ollama not connecting
+
 ```
 Error: Cannot connect to Ollama at http://localhost:11434
-Fix: Make sure Ollama is running
-  1. In terminal: ollama serve
-  2. In another terminal: ollama pull mistral
-  3. Retry notebook
 ```
 
-### "Model 'mistral' not found"
+1. Start the server: `ollama serve`
+2. Pull the model: `ollama pull mistral`
+3. Verify: `curl http://localhost:11434/api/tags`
+
+### Model not found
+
 ```
 Error: Model 'mistral' not found
-Fix: Install the model
-  ollama pull mistral
-  # or use another model:
-  # ollama pull llama2
-  # ollama pull neural-chat
 ```
 
-### "ChromaDB persistence error"
+Install it: `ollama pull mistral`  
+Or switch to another model in the Streamlit sidebar.
+
+### ChromaDB lock error
+
 ```
-Error: Cannot write to ~/.vector_memory/db/
-Fix: Check directory permissions
-  mkdir -p ~/.vector_memory/db/
-  # On Windows: ensure no path conflicts
+Error: Cannot write to .tech_agent_memory/
 ```
 
-### "Out of memory"
+Ensure only one process accesses the database at a time. Stop any running notebook or Streamlit instance before restarting.
+
+### Out of memory (LLM)
+
+Try a smaller model:
+```bash
+ollama pull orca-mini
 ```
-Memory issue running local LLM
-Fix: Try smaller model
-  ollama pull orca-mini  # Smaller than mistral
-  # Then edit: llm = OllamaLLM(model_name="orca-mini")
-```
+Then change the model name in the Streamlit sidebar.
 
 ---
 
-## Key Takeaways
+## License
 
-1. **Agents can be stateful** - They learn and improve over time
-2. **Memory enables better responses** - Context from past makes LLM outputs better
-3. **Semantic search is powerful** - Finds relevant memories despite different wording
-4. **Multi-agent learning scales** - Teams share knowledge automatically
-5. **Local LLM works well** - Ollama + memory is fast enough for production
-6. **Persistence is crucial** - Memory survives sessions
-
----
-
-## Extension Ideas
-
-1. **Memory Decay** - Make old memories less relevant over time
-2. **User Isolation** - Keep separate memory per user for privacy
-3. **Visualization** - Dashboard showing memory usage
-4. **Feedback Loops** - Rate response quality to improve
-5. **Distributed Memory** - Scale to multiple machines
-6. **Multi-Modal** - Store images, PDFs, voice in memory
-
----
-
-## Requirements Met ✓
-
-- [x] Actual LLM (Ollama) - Real response generation
-- [x] Episodic & Declarative Memory - Week 1 architecture
-- [x] Persistent Storage - Survives sessions
-- [x] Multi-Agent Sharing - Organizational learning
-- [x] Before/After Comparison - Memory improves responses
-- [x] Memory-Informed Responses - LLM uses retrieved context
-- [x] Error Learning - Agents track and avoid mistakes
-
----
-
-## Questions?
-
-Refer to:
-- **SRS.md** for detailed requirements
-- **COMPLETION_SUMMARY.md** for verification details
-- Notebook comments for implementation details
-
-**Happy Learning! 🚀**
+This project was developed as part of the **Employability Life — Agentic AI & RAG** program (Week 4).
