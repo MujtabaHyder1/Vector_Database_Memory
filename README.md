@@ -122,6 +122,33 @@ Result: Accurate, policy-compliant ✓
 1. **Python 3.8+** with pip
 2. **Ollama** installed and running locally
 
+### Streamlit Tech Department Agent
+
+This repo now also includes a runnable tech department support agent UI:
+
+```bash
+pip install -r requirements.txt
+ollama serve
+ollama pull mistral
+streamlit run streamlit_app.py
+```
+
+The Streamlit app adds:
+
+- Policy RAG from `knowledge_base/tech_department_policies.md`
+- Persistent ChromaDB memory in `.tech_agent_memory/`
+- Episodic memory for past conversations, requests, issues, and tickets
+- Declarative memory for facts, policies, and remembered agent instructions
+- Device request and device issue forms
+- Chat commands: `/help`, `/policy`, `/memory`, `/remember`, `/stats`, `/request`, `/issue`
+- Ollama-backed answers with a policy-grounded fallback when Ollama is unavailable
+
+To run the notebook test for this app:
+
+```bash
+python -m nbconvert --to notebook --execute Tech_Department_Agent_Test.ipynb --output Tech_Department_Agent_Test.executed.ipynb
+```
+
 ### Installation Steps
 
 #### 1. Install Ollama

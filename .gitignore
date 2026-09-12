@@ -44,6 +44,7 @@ env/
 
 # ChromaDB
 __chroma_data__/
+.tech_agent_memory/
 *.db
 *.sqlite
 *.sqlite3
