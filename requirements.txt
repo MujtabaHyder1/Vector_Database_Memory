@@ -4,3 +4,8 @@ requests
 streamlit
 numpy
 nbconvert
+langgraph
+langchain-core
+torchvision
+SpeechRecognition
+pypdf

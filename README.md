@@ -1,326 +1,161 @@
-# Vector Database Memory — Tech Department Support Agent
+# Vector Database Memory — TechCore Multi-Agent Support System
 
 **Program**: Employability Life — Agentic AI & RAG (Week 4)  
 **Date**: September 2026  
-**Team**: Dune  
-**Status**: ✅ Production-Ready
+**Status**: ✅ Production-Ready • LangGraph Multi-Agent Orchestrated • Voice-Enabled
 
 ---
 
-## Overview
+## 🌟 Overview & Key Enhancements
 
-A **stateful AI support agent** for company tech departments that uses **persistent vector memory** (ChromaDB), **policy RAG**, and a **local LLM** (Ollama) to answer employee questions about devices, software, access, and IT policies.
+The **TechCore Support System** is an enterprise-grade AI IT support solution. Originally a standalone RAG chatbot, it has been comprehensively upgraded into an autonomous **LangGraph Multi-Agent Architecture** with integrated **domain tools**, **self-healing failure handlers**, **real-time step loading**, and **two-way Voice Mode (STT & TTS)**.
 
-Unlike a stateless chatbot, this agent:
-
-- **Remembers every conversation** (episodic memory) and uses past interactions to improve future answers.
-- **Stores taught facts and instructions** (declarative memory) that persist across sessions.
-- **Retrieves relevant policy** sections via semantic search before generating an answer.
-- **Creates and tracks tickets** for device requests and device issues.
-- **Falls back gracefully** to retrieved context when the LLM is unavailable.
+### Core Capabilities:
+- **LangGraph Multi-Agent Team**: 7 specialized agents (Triage, Policy, Hardware, Diagnostics, Tools Executor, Responder, Memory) + dedicated Failure Handler.
+- **Persistent Vector Memory**: 4 ChromaDB collections (`tech_policy_rag`, `tech_tickets`, `tech_episodic_memory`, `tech_declarative_memory`) using 384-dimensional cosine embeddings (`all-MiniLM-L6-v2`).
+- **Domain Tools Layer (`tools.py`)**: 8 sandboxed IT tools including Hardware Catalog, Network Diagnostics, SLA Calculator, Ticket Creation & Lookup, System Status, and Vector Memory search.
+- **PDF & Document Ingestion**: Direct upload and automated semantic chunking of `.pdf`, `.txt`, and `.md` files into ChromaDB vector memory (`pypdf` integration).
+- **In-Chat Automated Ticket Creation**: Multi-agent recognition of ticket logging intent directly from the chat input with automatic SLA evaluation.
+- **Resilient Error & Failure Handling**: Automatic graph-level exception routing to `node_failure_handler`, preventing crashes and delivering actionable remediation.
+- **Ollama Silent Auto-Starter**: Automatically starts the local Ollama background server if offline (`ensure_running`).
+- **Real-Time Step Loading & Agent Traces**: Dynamic visual status displaying agent reasoning, tool invocations, and live active agent pills.
+- **ChatGPT-Style Unified Bottom Bar**: Single sleek pill input bar with built-in microphone voice dictation (`SpeechRecognition`), file attachment parsing, and text-to-speech audio read-aloud.
+- **Modernized UI/UX**: High-contrast dark theme with interactive Ticket Central, Memory Vault, and Tool Sandbox tabs.
 
 ---
 
-## Architecture
+## 🏗️ Multi-Agent Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                      Streamlit UI                              │
-│   Chat · Sidebar forms · /commands · Metrics                   │
-└────────────────────────┬───────────────────────────────────────┘
-                         │
-              ┌──────────▼──────────┐
-              │ TechDepartmentAgent │
-              │   answer()          │
-              │   submit_device_*() │
-              │   teach_fact()      │
-              └──────────┬──────────┘
-                         │
-          ┌──────────────┴──────────────┐
-          │                             │
-  ┌───────▼────────┐          ┌────────▼────────┐
-  │ TechMemoryRAG  │          │  OllamaClient   │
-  │  search()      │          │  generate()     │
-  │  remember_*()  │          │  is_available() │
-  │  create_ticket()│          └────────────────┘
-  └───────┬────────┘
-          │
-  ┌───────▼──────────────────────────────┐
-  │           ChromaDB (Persistent)       │
-  │                                       │
-  │  tech_policy_rag        6 sections    │
-  │  tech_episodic_memory   conversations │
-  │  tech_declarative_memory facts/rules  │
-  │  tech_tickets           requests/issues│
-  └───────────────────────────────────────┘
-          │
-  ┌───────▼───────────────┐
-  │  SentenceTransformer  │
-  │  all-MiniLM-L6-v2     │
-  │  384-dim embeddings   │
-  └───────────────────────┘
+                                  ┌──────────────────────────┐
+                                  │   User Message / Voice   │
+                                  └────────────┬─────────────┘
+                                               │
+                                               ▼
+                                  ┌──────────────────────────┐
+                                  │   1. Triage & Routing    │
+                                  └──────┬─────┬─────┬───────┘
+                     ┌───────────────────┘     │     └───────────────────┐
+                     ▼                         ▼                         ▼
+         ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
+         │ 2. Policy Specialist  │ │ 3. Hardware Specialist│ │4. Diagnostics Special.│
+         └───────────┬───────────┘ └───────────┬───────────┘ └───────────┬───────────┘
+                     └───────────────────┐     │     ┌───────────────────┘
+                                         ▼     ▼     ▼
+                                  ┌──────────────────────────┐
+                                  │ 5. Domain Tools Executor │
+                                  │  - Hardware Catalog      │
+                                  │  - Network Diagnostics   │
+                                  │  - SLA Calculator        │
+                                  │  - Ticket Creation       │
+                                  │  - ChromaDB Search       │
+                                  └────────────┬─────────────┘
+                                               ▼
+                                  ┌──────────────────────────┐
+                                  │ 6. Responder Agent (LLM) │
+                                  └────────────┬─────────────┘
+                                               ▼
+                                  ┌──────────────────────────┐
+                                  │ 7. Memory Agent (Embed)  │
+                                  └────────────┬─────────────┘
+                                               ▼
+                                  ┌──────────────────────────┐
+                                  │   Streamlit Web / Voice  │
+                                  └──────────────────────────┘
 ```
 
-### Memory Model
-
-| Memory Type | Collection | Purpose | Example |
-|---|---|---|---|
-| **Policy RAG** | `tech_policy_rag` | Company policies split by markdown section | "Standard laptop budget is 2000 USD" |
-| **Episodic** | `tech_episodic_memory` | Past conversations auto-saved after every interaction | "User asked about VPN crash — agent suggested reinstall" |
-| **Declarative** | `tech_declarative_memory` | Facts and instructions taught by users or seeded at init | "Always require manager approval for laptops over $1500" |
-| **Tickets** | `tech_tickets` | Device requests and device issues with structured fields | TECH-20260912-EDBD43 — Laptop request for John Smith |
-
-All four collections use **cosine similarity** with **HNSW indexing** for O(log n) retrieval.
+> **Detailed Architecture Guide**: See [`ARCHITECTURE.md`](ARCHITECTURE.md) for Mermaid flowcharts, state schema specs, and failure recovery routing.
 
 ---
 
-## Quick Start
+## 🧰 Domain Tools Layer (`tools.py`)
 
-### Prerequisites
-
-| Requirement | Version | Purpose |
+| Tool Identifier | Purpose | Outputs / Actions |
 |---|---|---|
-| Python | 3.10+ | Runtime |
-| Ollama | Latest | Local LLM server |
-| mistral model | — | Default LLM (configurable) |
+| `hardware_catalog_tool` | Lookup approved laptops, monitors, accessories | Specs, USD cost tier, lead times, approval hierarchy |
+| `network_diagnostics_tool`| Troubleshoot VPN, Wi-Fi, BSOD, permissions | Step-by-step diagnostic checklist & escalation team |
+| `sla_calculator_tool` | Calculate response & resolution targets | Resolution window, assigned engineer tier, on-call trigger |
+| `ticket_creation_tool` | Create & register IT support tickets in ChromaDB | Ticket ID (`TECH-YYYYMMDD-...`), SLA commitments, assigned tier |
+| `ticket_lookup_tool` | Search and filter existing tickets | Ticket IDs, documents, metadata, status |
+| `search_policy_tool` | Semantic search against ChromaDB | Cosine-ranked policy chunks with relevance scores |
+| `system_status_tool` | Live/mock status of IT infrastructure | SSO, GlobalProtect, Microsoft 365, AWS, Jira |
+| `memory_lookup_tool` | Search declarative facts and episodic history | User-taught rules, previous conversations |
 
-### 1. Clone and install
+---
 
+## 📄 PDF & Document Vector Ingestion
+
+The system supports permanent knowledge ingestion of enterprise documents:
+1. **Sidebar Upload**: In **🧠 Teach Agent Knowledge**, upload any `.pdf`, `.txt`, or `.md` file.
+2. **Page-Level Parsing**: Uses `pypdf` to extract text page-by-page, sanitize content, and divide into semantic chunks.
+3. **ChromaDB Indexing**: Generates 384-dimensional dense vectors with `SentenceTransformer` (`all-MiniLM-L6-v2`) and persists directly into `tech_declarative_memory`.
+4. **Instant Multi-Agent Retrieval**: All specialist agents immediately query the newly ingested document context when answering employee inquiries.
+5. **Chat Attachments**: Attach documents directly in the chat bar (`+` icon) for immediate on-the-fly conversational analysis.
+
+---
+
+## 🛡️ Error & Failure Handling
+
+The system is engineered for **resilience and high availability**:
+1. **Tool-Level Isolation**: Every tool executes in a sandboxed `try-except` block, returning a structured `ToolResult` object.
+2. **LangGraph Failure Handler**: If any agent node throws an exception, conditional edges route directly to `node_failure_handler`.
+3. **LLM Dropout Resilience**: If Ollama is offline or times out (90s limit), the system automatically executes structured vector synthesis.
+4. **Silent Ollama Auto-Start**: If Ollama is not running, the application automatically launches `ollama serve` in the background.
+5. **Persistent Vector Protection**: Collections use idempotent slug generation, preventing database corruption upon restarts.
+
+---
+
+## 🚀 Quick Start Guide
+
+### 1. Prerequisites
+- Python 3.10+
+- (Optional) [Ollama](https://ollama.ai/) with `mistral` model. The app automatically attempts to spin up Ollama if installed, and falls back to deterministic vector synthesis if unavailable.
+
+### 2. Environment Setup
 ```bash
 git clone https://github.com/MujtabaHyder1/Vector_Database_Memory.git
 cd Vector_Database_Memory
 
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS / Linux
-source .venv/bin/activate
+# Activate existing or create virtual environment
+.venv\Scripts\Activate.ps1   # Windows PowerShell
+# source .venv/bin/activate  # macOS / Linux
 
+# Install dependencies (chromadb, langgraph, pypdf, etc.)
 pip install -r requirements.txt
 ```
 
-### 2. Start Ollama
-
+### 3. Launch the Web Application
 ```bash
-# Terminal 1 — start the server
-ollama serve
-
-# Terminal 2 — pull the model
-ollama pull mistral
+streamlit run streamlit_app.py --server.fileWatcherType none
 ```
-
-> The agent works without Ollama too — it falls back to showing retrieved policy context directly.
-
-### 3. Run the Streamlit app
-
-```bash
-streamlit run streamlit_app.py
-```
-
-Open **http://localhost:8501** in your browser.
-
-### 4. (Optional) Run the test notebook
-
-```bash
-python -m nbconvert --to notebook --execute Tech_Department_Agent_Test.ipynb \
-  --output Tech_Department_Agent_Test.executed.ipynb
-```
+Open **http://localhost:8501** in your web browser.
 
 ---
 
-## Features
+## 💻 Dashboard Tabs
 
-### Chat Commands
-
-| Command | Description |
-|---|---|
-| `/help` | Show all available commands |
-| `/policy <query>` | Search tech policies only |
-| `/memory <query>` | Search policies + tickets + episodic + declarative memory |
-| `/remember <fact>` | Save a declarative memory for future answers |
-| `/stats` | Show counts for all memory collections |
-| `/request` | Redirect to the Device Request sidebar form |
-| `/issue` | Redirect to the Device Issue sidebar form |
-
-### Sidebar
-
-- **Metrics panel** — live counts for policy sections, tickets, episodic memory, declarative memory.
-- **Teach Declarative Memory** — type a fact or instruction and the agent will remember it permanently.
-- **Device Request form** — structured form capturing employee, department, manager, device type, work mode, business reason, preferred date.
-- **Device Issue form** — structured form capturing employee, device/asset tag, urgency, issue summary, troubleshooting tried.
-
-### Answer Generation Flow
-
-```
-User message
-    │
-    ├── Is it a /command? ──► Handle command directly
-    │
-    └── Regular question
-            │
-            ▼
-        ┌───────────────────────────┐
-        │  TechMemoryRAG.search()   │
-        │  Query all 4 collections  │
-        │  Sort by cosine similarity│
-        └───────────┬───────────────┘
-                    │
-                    ▼
-        ┌───────────────────────────┐
-        │  Build prompt with top 6  │
-        │  retrieved context chunks │
-        └───────────┬───────────────┘
-                    │
-            ┌───────┴───────┐
-            │               │
-     Ollama available?   Not available
-            │               │
-            ▼               ▼
-     LLM generates     Fallback: show
-     grounded answer    retrieved context
-            │               │
-            └───────┬───────┘
-                    │
-                    ▼
-        ┌───────────────────────────┐
-        │  Save to episodic memory  │
-        │  (auto, every interaction)│
-        └───────────────────────────┘
-```
-
-### Ticket Priority Classification
-
-Device issues are auto-classified by scanning the issue text:
-
-| Priority | Trigger keywords |
-|---|---|
-| **Critical** | lost, stolen, security, cannot work, unable to work, production, executive |
-| **High** | vpn, crash, meeting, camera, microphone, blocked, urgent |
-| **Normal** | Everything else |
+1. **💬 Support Desk**: Interactive multi-agent chat, live reasoning execution trace, active agent badges, speech-to-text dictation, and text-to-speech voice read-aloud.
+2. **🎫 Ticket Central**: Live searchable explorer of all tickets stored in ChromaDB, with fast-track ticket creation directly inside the tab.
+3. **🧠 Memory & Knowledge Vault**: Direct inspector for Policy Vectors, User-Taught Rules, Uploaded Document Chunks, and Episodic Conversation history.
+4. **🛠️ Diagnostic Tools Sandbox**: Interactive testbed to execute Hardware lookups, VPN Diagnostics, SLA Calculations, and System Status checks.
+5. **📊 System Telemetry & Health**: Real-time status indicators for Ollama, LangGraph, and ChromaDB persistent collections.
 
 ---
 
-## File Structure
+## 📁 Repository Structure
 
 ```
 Vector_Database_Memory/
-├── streamlit_app.py                  Streamlit UI (chat + sidebar forms)
-├── tech_agent.py                     Core agent: OllamaClient, TechMemoryRAG,
-│                                       TechDepartmentAgent (487 lines)
+├── agent_graph.py           # LangGraph Multi-Agent StateGraph & Failure Handler
+├── tools.py                 # Sandboxed Domain Tools (8 tools: Catalog, Diag, SLA, Tickets, Status)
+├── tech_agent.py            # TechDepartmentAgent, TechMemoryRAG, OllamaClient, Document Ingestion
+├── streamlit_app.py         # Streamlit UI with Unified Bottom Bar, Voice Mode & PDF Upload
+├── ARCHITECTURE.md          # Multi-Agent Architecture Documentation & Mermaid Diagrams
+├── SRS.md                   # Software Requirements Specification (9 FRs, 5 NFRs)
+├── COMPLETION_SUMMARY.md    # Detailed Implementation & Test Verification Summary
+├── START_HERE.md            # Quick-start onboarding and submission guide
+├── requirements.txt         # Project dependencies (chromadb, langgraph, pypdf, etc.)
 ├── knowledge_base/
-│   └── tech_department_policies.md   Policy document (6 sections, 70 lines)
-├── .tech_agent_memory/               ChromaDB persistent storage (auto-created)
-├── Vector_Database_Memory.ipynb      Original Week 4 notebook (HR/IT agents)
-├── Tech_Department_Agent_Test.ipynb  Test notebook for tech agent
-├── requirements.txt                  Python dependencies
-├── runtime.txt                       Python version spec
-├── README.md                         This file
-├── SRS.md                            Software Requirements Specification
-├── COMPLETION_SUMMARY.md             Verification and test results
-├── START_HERE.md                     Legacy quick-start guide
-└── .gitignore                        Git exclusions
+│   └── tech_department_policies.md   # Ground-truth corporate IT policies
+└── .tech_agent_memory/      # Persistent ChromaDB storage directory
 ```
-
----
-
-## Technical Specifications
-
-### Embeddings & Vector Store
-
-| Parameter | Value |
-|---|---|
-| Model | `all-MiniLM-L6-v2` (SentenceTransformers) |
-| Dimensions | 384 |
-| Distance metric | Cosine |
-| Indexing | HNSW |
-| Backend | ChromaDB `PersistentClient` |
-| Storage path | `.tech_agent_memory/` (project-local) |
-
-### LLM
-
-| Parameter | Value |
-|---|---|
-| Provider | Ollama (local) |
-| Default model | `mistral` |
-| API endpoint | `http://localhost:11434/api/generate` |
-| Temperature | 0.2 |
-| Timeout | 90 seconds |
-| Fallback | Policy-context response when Ollama is unavailable |
-
-### Performance
-
-| Operation | Latency |
-|---|---|
-| Memory retrieval (HNSW) | < 100 ms |
-| LLM response generation | 2–10 s (depends on model + hardware) |
-| Policy ingestion (first run) | ~5 s (6 sections, embedding + insert) |
-
----
-
-## How It Connects to Previous Weeks
-
-| Week | Concept | How it's used here |
-|---|---|---|
-| **Week 2** | Vector embeddings & semantic search | `all-MiniLM-L6-v2` embeds queries and documents; ChromaDB stores and retrieves by cosine similarity |
-| **Week 3** | RAG pipelines | Retrieve policy + memory → Augment the prompt → Generate answer via Ollama |
-| **Week 4** | Stateful agents with persistent memory | Episodic + declarative memory persists across sessions; agent learns from every interaction |
-
----
-
-## Dependencies
-
-```
-chromadb
-sentence-transformers
-requests
-streamlit
-numpy
-nbconvert
-```
-
-All are listed in `requirements.txt`.
-
----
-
-## Troubleshooting
-
-### Ollama not connecting
-
-```
-Error: Cannot connect to Ollama at http://localhost:11434
-```
-
-1. Start the server: `ollama serve`
-2. Pull the model: `ollama pull mistral`
-3. Verify: `curl http://localhost:11434/api/tags`
-
-### Model not found
-
-```
-Error: Model 'mistral' not found
-```
-
-Install it: `ollama pull mistral`  
-Or switch to another model in the Streamlit sidebar.
-
-### ChromaDB lock error
-
-```
-Error: Cannot write to .tech_agent_memory/
-```
-
-Ensure only one process accesses the database at a time. Stop any running notebook or Streamlit instance before restarting.
-
-### Out of memory (LLM)
-
-Try a smaller model:
-```bash
-ollama pull orca-mini
-```
-Then change the model name in the Streamlit sidebar.
-
----
-
-## License
-
-This project was developed as part of the **Employability Life — Agentic AI & RAG** program (Week 4).

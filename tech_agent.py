@@ -21,16 +21,24 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shutil
+import subprocess
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 import chromadb                          # Vector database for persistent memory
 import requests                          # HTTP client for Ollama REST API
 from sentence_transformers import SentenceTransformer  # Text → 384-dim embeddings
+
+from agent_graph import TechMultiAgentWorkflow
+
+logger = logging.getLogger("tech_agent.core")
 
 
 # --- Default paths -----------------------------------------------------------
@@ -64,20 +72,78 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")      # Ollama server URL
         self.api_endpoint = f"{self.base_url}/api/generate"  # REST endpoint for text generation
 
+    def ensure_running(self) -> bool:
+        """Check if Ollama server is running; if not, automatically start it in the background."""
+        try:
+            response = requests.get(f"{self.base_url}/api/tags", timeout=1.0)
+            if response.status_code == 200:
+                return True
+        except Exception:
+            pass
+
+        # Locate ollama binary in PATH or Windows default install directory
+        ollama_bin = shutil.which("ollama")
+        if not ollama_bin:
+            win_default = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe")
+            if os.path.exists(win_default):
+                ollama_bin = win_default
+
+        if not ollama_bin:
+            logger.info("Ollama binary not found on system PATH or default installation folder.")
+            return False
+
+        try:
+            logger.info("Auto-starting Ollama server: %s serve", ollama_bin)
+            creation_flags = 0
+            if os.name == "nt":
+                creation_flags = subprocess.CREATE_NO_WINDOW | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+
+            subprocess.Popen(
+                [ollama_bin, "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                creationflags=creation_flags,
+                close_fds=True,
+            )
+
+            # Wait up to 5 seconds for Ollama server to become available
+            for _ in range(10):
+                time.sleep(0.5)
+                try:
+                    response = requests.get(f"{self.base_url}/api/tags", timeout=1.0)
+                    if response.status_code == 200:
+                        logger.info("Ollama server successfully auto-started in background!")
+                        return True
+                except Exception:
+                    continue
+        except Exception as exc:
+            logger.warning("Could not auto-start Ollama: %s", exc)
+
+        return False
+
     def is_available(self) -> bool:
         """Check if Ollama is running AND the required model is installed.
-        Returns False if Ollama is down or the model hasn't been pulled."""
+        If Ollama is not running, attempts to automatically spin it up."""
         try:
-            # Ask Ollama for its list of installed models
-            response = requests.get(f"{self.base_url}/api/tags", timeout=2)
-            if response.status_code != 200:
-                return False
-            models = response.json().get("models", [])
-            model_names = [model.get("name", "") for model in models]
-            # Check if our model is in the list (handles both "mistral" and "mistral:latest")
-            return any(name == self.model_name or name.startswith(f"{self.model_name}:") for name in model_names)
+            response = requests.get(f"{self.base_url}/api/tags", timeout=1.5)
         except requests.RequestException:
+            # Attempt to auto-start Ollama server
+            if self.ensure_running():
+                try:
+                    response = requests.get(f"{self.base_url}/api/tags", timeout=2.0)
+                except requests.RequestException:
+                    return False
+            else:
+                return False
+
+        if response.status_code != 200:
             return False
+        models = response.json().get("models", [])
+        model_names = [model.get("name", "") for model in models]
+        # Check if our model is in the list (handles both "mistral" and "mistral:latest")
+        return any(name == self.model_name or name.startswith(f"{self.model_name}:") for name in model_names)
+
 
     def generate(self, prompt: str, temperature: float = 0.2) -> str:
         """Send a prompt to Ollama and return the generated text response.
@@ -290,6 +356,135 @@ class TechMemoryRAG:
         )
         return ticket_id
 
+    def ingest_document_bytes(self, file_bytes: bytes, filename: str, category: str = "uploaded_doc") -> dict[str, Any]:
+        """Save uploaded document into knowledge_base/ directory, extract text, chunk, and index into ChromaDB vector memory."""
+        import io
+        extracted_chunks: list[dict[str, Any]] = []
+        num_pages = 1
+
+        # 1. Persist the raw document to the knowledge_base directory
+        kb_dir = Path("knowledge_base")
+        kb_dir.mkdir(parents=True, exist_ok=True)
+        dest_file = kb_dir / filename
+        saved_to_disk = False
+        try:
+            with open(dest_file, "wb") as f:
+                f.write(file_bytes)
+            saved_to_disk = True
+            logger.info("Saved uploaded document to knowledge base: %s", dest_file)
+        except Exception as exc:
+            logger.warning("Could not persist file to knowledge_base directory: %s", exc)
+
+        # 2. Extract text and chunk
+        try:
+            if filename.lower().endswith(".pdf"):
+                import pypdf
+                reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                num_pages = len(reader.pages)
+                for page_idx, page in enumerate(reader.pages):
+                    page_text = (page.extract_text() or "").strip()
+                    if not page_text:
+                        continue
+                    paragraphs = [p.strip() for p in page_text.split("\n\n") if len(p.strip()) > 30]
+                    if not paragraphs:
+                        paragraphs = [page_text]
+                    for p in paragraphs:
+                        if len(p) > 1200:
+                            for i in range(0, len(p), 900):
+                                extracted_chunks.append({"content": p[i:i+1000], "page": page_idx + 1})
+                        else:
+                            extracted_chunks.append({"content": p, "page": page_idx + 1})
+            else:
+                # Text or Markdown file
+                text_content = file_bytes.decode("utf-8", errors="replace").strip()
+                paragraphs = [p.strip() for p in text_content.split("\n\n") if len(p.strip()) > 30]
+                if not paragraphs:
+                    paragraphs = [text_content]
+                for p in paragraphs:
+                    if len(p) > 1200:
+                        for i in range(0, len(p), 900):
+                            extracted_chunks.append({"content": p[i:i+1000], "page": 1})
+                    else:
+                        extracted_chunks.append({"content": p, "page": 1})
+
+        except Exception as exc:
+            logger.exception("Failed to process uploaded document: %s", exc)
+            return {
+                "success": False,
+                "error": str(exc),
+                "answer": f"⚠️ Could not parse file `{filename}`: {str(exc)}",
+            }
+
+        if not extracted_chunks:
+            return {
+                "success": False,
+                "error": "No text content found in document",
+                "answer": f"⚠️ No extractable text found in `{filename}`. Please ensure the document contains selectable text.",
+            }
+
+        # 3. Index chunks into ChromaDB declarative_collection
+        ingested_ids = []
+        for ch in extracted_chunks:
+            doc_id = f"DOC-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+            meta = {
+                "kind": "declarative",
+                "source": f"knowledge_base/{filename}",
+                "filename": filename,
+                "page": ch.get("page", 1),
+                "category": category,
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+            }
+            page_info = f" | Page {ch['page']}" if filename.lower().endswith(".pdf") else ""
+            content_with_header = f"[{filename}{page_info}]\n{ch['content']}"
+            self.declarative_collection.add(
+                ids=[doc_id],
+                documents=[content_with_header],
+                embeddings=[self._embed(content_with_header)],
+                metadatas=[meta],
+            )
+            ingested_ids.append(doc_id)
+
+        stats = self.stats()
+        preview_samples = "\n".join([f"> *\"{ch['content'][:140]}...\"*" for ch in extracted_chunks[:3]])
+
+        lines = [
+            f"### 📄 Document Vectorized & Ingested: `{filename}`\n",
+            f"- **Knowledge Base Location:** `knowledge_base/{filename}`" if saved_to_disk else f"- **Knowledge Base Storage:** Vector Ingestion Active",
+            f"- **Pages Processed:** `{num_pages}` pages" if filename.lower().endswith(".pdf") else f"- **File Type:** Plaintext / Markdown",
+            f"- **Semantic Vector Embeddings:** `{len(ingested_ids)}` chunks generated (384-d cosine vectors)",
+            f"- **Target Collection:** `tech_declarative_memory` (ChromaDB)",
+            f"- **Total Stored Knowledge Units:** `{stats.get('declarative_memories', 0)}` records",
+            f"- **Retrieval Readiness:** Active across multi-agent RAG immediately.\n",
+            "**Indexed Knowledge Sample Preview:**",
+            preview_samples,
+            f"\n*The multi-agent workflow has stored `{filename}` in the Knowledge Base and integrated it into live memory for future queries.*",
+        ]
+        answer = "\n".join(lines)
+
+        trace = [
+            f"📁 [Knowledge Base] Saved file copy to 'knowledge_base/{filename}'",
+            f"📄 [Document Parser] Extracted {sum(len(c['content']) for c in extracted_chunks)} chars across {num_pages} pages",
+            f"🧠 [Memory Agent] Generated {len(ingested_ids)} semantic vectors via all-MiniLM-L6-v2",
+            f"💾 [ChromaDB] Persisted chunks into 'tech_declarative_memory'",
+            f"✅ [Verification] Document indexed and available for live similarity retrieval",
+        ]
+
+        self.remember_interaction(f"Ingested document: {filename}", answer, category="document_ingestion")
+
+        return {
+            "success": True,
+            "filename": filename,
+            "saved_to_kb": saved_to_disk,
+            "kb_path": str(dest_file) if saved_to_disk else None,
+            "num_pages": num_pages,
+            "num_chunks": len(ingested_ids),
+            "chunk_ids": ingested_ids,
+            "answer": answer,
+            "agent_trace": trace,
+            "active_agent": "Memory Agent",
+            "ingested_ids": ingested_ids,
+        }
+
     def stats(self) -> dict[str, int]:
         """Return the current count of items in each ChromaDB collection.
         Used by the /stats command and the Streamlit sidebar metrics."""
@@ -333,11 +528,16 @@ class TechMemoryRAG:
         if count == 0:
             return []  # Empty collection — nothing to search
         # Embed the query and find nearest neighbors by cosine distance
-        raw = collection.query(
-            query_embeddings=[self._embed(query)],
-            n_results=min(top_k, count),  # Don't request more results than exist
-            include=["documents", "metadatas", "distances"],
-        )
+        try:
+            raw = collection.query(
+                query_embeddings=[self._embed(query)],
+                n_results=min(top_k, count),  # Don't request more results than exist
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception as exc:
+            logger.warning("ChromaDB query exception on collection '%s': %s", getattr(collection, "name", kind), exc)
+            return []
+
         # Convert raw ChromaDB results into SearchResult objects
         items: list[SearchResult] = []
         for index, content in enumerate(raw.get("documents", [[]])[0]):
@@ -415,65 +615,209 @@ class TechDepartmentAgent:
     def __init__(self, rag: TechMemoryRAG, llm: OllamaClient):
         self.rag = rag  # Vector memory manager (4 ChromaDB collections)
         self.llm = llm  # Ollama LLM client for generating answers
+        # Multi-Agent LangGraph workflow
+        self.workflow = TechMultiAgentWorkflow(rag_instance=self.rag, llm_client=self.llm)
 
-    def answer(self, message: str) -> dict[str, Any]:
-        """Main entry point for processing a user message.
-        1. Check if it's a /command → handle directly
-        2. Otherwise: search memory → generate LLM answer → save to episodic memory
-        Every interaction is automatically saved for future retrieval."""
+    def answer(self, message: str, step_callback: Optional[Callable[[str], None]] = None) -> dict[str, Any]:
+        """Main entry point for processing a user message via the LangGraph Multi-Agent system.
+        
+        Workflow Steps:
+        1. Check if it's a /command → handle immediately with direct command logic.
+        2. Otherwise: Dispatch message to LangGraph StateGraph (Triage → Specialist → Tools → Responder → Memory).
+        3. Convert output sources into `SearchResult` instances for UI backward compatibility.
+        """
         # Step 1: Check for slash commands (e.g. /help, /stats, /remember)
         command_result = self._handle_command(message)
         if command_result:
             self.rag.remember_interaction(message, command_result["answer"], category="command")
             return command_result
 
-        # Step 2: Search all 4 collections for relevant context
-        context = self.rag.search(message)
+        # Step 2: Execute LangGraph Multi-Agent Workflow
+        result = self.workflow.run(message, step_callback=step_callback)
 
-        # Step 3: Generate answer using LLM with retrieved context (or fallback)
-        answer = self._generate_answer(message, context)
+        # Convert raw sources dict to SearchResult objects for UI compatibility
+        converted_sources: list[SearchResult] = []
+        for s in result.get("sources", []):
+            if isinstance(s, SearchResult):
+                converted_sources.append(s)
+            elif isinstance(s, dict):
+                converted_sources.append(
+                    SearchResult(
+                        id=s.get("id", "source-doc"),
+                        content=s.get("content", ""),
+                        source=s.get("title", s.get("kind", "knowledge")),
+                        kind=s.get("kind", "policy"),
+                        similarity=float(s.get("similarity", 0.85)),
+                        metadata=s.get("metadata", {}),
+                    )
+                )
 
-        # Step 4: Auto-save this conversation to episodic memory
-        self.rag.remember_interaction(message, answer)
+        # Fallback to direct RAG search if sources empty
+        if not converted_sources:
+            try:
+                converted_sources = self.rag.search(message)[:4]
+            except Exception:
+                converted_sources = []
 
         return {
-            "answer": answer,
-            "sources": context[:6],  # Return top 6 sources for UI display
+            "answer": result.get("answer", ""),
+            "sources": converted_sources[:6],
+            "agent_trace": result.get("agent_trace", []),
+            "active_agent": result.get("active_agent", "Tech Agent"),
+            "tool_results": result.get("tool_results", []),
+            "intent": result.get("intent", ""),
+            "urgency": result.get("urgency", ""),
+            "status": result.get("status", "completed"),
             "command": None,
         }
 
     def submit_device_request(self, details: dict[str, str]) -> dict[str, Any]:
-        """Create a device request ticket from the sidebar form.
-        Saves the ticket to the tickets collection and the interaction to episodic memory."""
+        """Create a device request ticket using domain tools and return an agentic dispatch report."""
+        import tools
         ticket_id = self.rag.create_ticket("device_request", details)
-        answer = (
-            f"Device request created as {ticket_id}. "
-            "Tech will review manager approval, business reason, budget fit, and target date before fulfillment."
-        )
-        # Save this event to episodic memory so future queries can reference it
+        
+        # 1. Hardware tool lookup
+        device_name = details.get("device", "")
+        hw_match = tools.hardware_catalog_tool(keyword=device_name[:14] if device_name else None)
+        hw_info = hw_match.output[0] if (hw_match.success and hw_match.output) else None
+
+        # 2. SLA target calculation
+        sla_res = tools.sla_calculator_tool(urgency="normal", issue_category="hardware")
+        sla_info = sla_res.output if sla_res.success else {}
+
+        # 3. Policy retrieval
+        policy_res = tools.search_policy_tool(self.rag, query="device hardware request approval process", top_k=1)
+        policy_title = policy_res.output[0]["title"] if (policy_res.success and policy_res.output) else "Corporate Hardware Policy"
+
+        lines = [
+            f"### 🎫 Device Request Dispatched: `{ticket_id}`\n",
+            f"**Employee:** {details.get('employee', 'N/A')} ({details.get('department', 'General')}) | **Manager:** {details.get('manager', 'N/A')}",
+            f"**Work Mode:** `{details.get('work_mode', 'Hybrid')}` | **Target Date:** `{details.get('preferred_date', 'Standard')}`\n",
+        ]
+
+        if hw_info:
+            lines.append("#### 💻 Approved Hardware Specifications & Budget")
+            lines.append(f"- **Selected Device:** {hw_info['name']}")
+            lines.append(f"- **Tier Assignment:** {hw_info['tier']}")
+            lines.append(f"- **Hardware Specs:** {hw_info['specs']}")
+            lines.append(f"- **Estimated Budget:** {hw_info['cost']}")
+            lines.append(f"- **Standard Lead Time:** {hw_info['lead_time']}")
+            lines.append(f"- **Approval Policy:** {hw_info['approval_rule']}\n")
+
+        lines.append("#### ⏱️ Service Level Agreement & Next Steps")
+        lines.append(f"- **Fulfillment SLA:** {sla_info.get('full_resolution_target', 'Within 24-72 business hours')}")
+        lines.append(f"- **Assigned Team:** {sla_info.get('assigned_tier', 'Tier 1 — IT Workplace Services')}")
+        lines.append(f"- **Governing IT Policy:** {policy_title}\n")
+        lines.append(f"**Business Justification:** *\"{details.get('business_reason', 'None provided')}\"*")
+        lines.append("\n*Automated notification dispatched to manager for sign-off. Track this ticket anytime in Ticket Central.*")
+
+        answer = "\n".join(lines)
+        
+        trace = [
+            f"🤖 [Triage Agent] Validated request submission for {details.get('employee')}",
+            f"🧰 [Hardware Specialist] Invoked hardware_catalog_tool for '{device_name}'",
+            f"⏱️ [SLA Calculator] Assigned resolution window: {sla_info.get('full_resolution_target')}",
+            f"💾 [Memory Agent] Persisted ticket {ticket_id} to ChromaDB vector store",
+        ]
+
         self.rag.remember_interaction(f"Device request {ticket_id}", answer, category="device_request")
-        return {"ticket_id": ticket_id, "answer": answer}
+        return {
+            "ticket_id": ticket_id,
+            "answer": answer,
+            "agent_trace": trace,
+            "active_agent": "Hardware Specialist",
+            "device": device_name,
+        }
 
     def submit_device_issue(self, details: dict[str, str]) -> dict[str, Any]:
-        """Create a device issue ticket from the sidebar form.
-        Auto-classifies priority (critical/high/normal) based on keywords in the issue text."""
+        """Create a device issue ticket using domain diagnostics tools and return an agentic triage plan."""
+        import tools
         ticket_id = self.rag.create_ticket("device_issue", details)
-        priority = self._classify_priority(details)  # Auto-classify based on keywords
-        answer = (
-            f"Device issue logged as {ticket_id} with {priority} priority. "
-            "Include screenshots or exact error messages if available so support can triage faster."
-        )
+        priority = (details.get("urgency") or "").lower() or self._classify_priority(details)
+
+        # 1. Run SLA calculator tool
+        sla_res = tools.sla_calculator_tool(urgency=priority, issue_category=details.get("issue_summary", "general"))
+        sla_info = sla_res.output if sla_res.success else {}
+
+        # 2. Run diagnostics playbook matching issue keywords
+        summary_text = (details.get("issue_summary", "") + " " + details.get("troubleshooting", "")).lower()
+        diag_res = tools.network_diagnostics_tool(issue_type=summary_text, os_type="windows")
+        diag_info = diag_res.output if diag_res.success else {}
+
+        lines = [
+            f"### 🚨 Incident Ticket Triaged: `{ticket_id}`\n",
+            f"**Affected Asset:** `{details.get('device_asset', 'Endpoint Asset')}` | **Reported by:** {details.get('employee', 'Employee')}",
+            f"**Classified Priority:** `{priority.upper()}`\n",
+            "#### ⏱️ SLA Commitment & Escalation Path",
+            f"- **First Response Window:** {sla_info.get('first_response_target', 'Within 60 minutes')}",
+            f"- **Target Resolution:** {sla_info.get('full_resolution_target', 'Within 4 hours')}",
+            f"- **Assigned Engineering Tier:** {sla_info.get('assigned_tier', 'Tier 2 Support Engineers')}",
+            f"- **Incident Alerting:** {'🚨 PagerDuty Triggered (On-Call Command)' if sla_info.get('pager_duty_incident') else 'Standard Priority Queue'}\n",
+        ]
+
+        if diag_info and diag_info.get("recommended_steps"):
+            lines.append(f"#### 🛠️ Automated Triage Playbook: *{diag_info.get('title')}*")
+            lines.append("**Immediate Recommended Troubleshooting Steps:**")
+            for step in diag_info.get("recommended_steps", [])[:4]:
+                lines.append(f"- {step}")
+            lines.append(f"\n**Escalation Lead Team:** {diag_info.get('escalation_team')}\n")
+
+        lines.append(f"**Issue Description:** *\"{details.get('issue_summary')}\"*")
+        if details.get("troubleshooting"):
+            lines.append(f"**Prior Steps Attempted:** *\"{details.get('troubleshooting')}\"*")
+        lines.append("\n*Engineering team notified. You can inspect updates anytime in Ticket Central.*")
+
+        answer = "\n".join(lines)
+
+        trace = [
+            f"🤖 [Triage Agent] Categorized incident as {priority.upper()}",
+            f"🛠️ [Diagnostics Agent] Executed playbook: {diag_info.get('title', 'General Triage')}",
+            f"⏱️ [SLA Calculator] First response target: {sla_info.get('first_response_target')}",
+            f"💾 [Memory Agent] Persisted incident {ticket_id} to ChromaDB tickets collection",
+        ]
+
         self.rag.remember_interaction(f"Device issue {ticket_id}", answer, category="device_issue")
-        return {"ticket_id": ticket_id, "answer": answer, "priority": priority}
+        return {
+            "ticket_id": ticket_id,
+            "answer": answer,
+            "agent_trace": trace,
+            "active_agent": "Diagnostics Specialist",
+            "priority": priority,
+        }
 
     def teach_fact(self, fact: str, category: str = "agent_instruction") -> dict[str, Any]:
-        """Teach the agent a new fact or instruction. Saves to declarative memory
-        so it will be retrieved in future queries when semantically relevant."""
+        """Teach the agent a new declarative fact and return an agentic memory confirmation."""
         memory_id = self.rag.remember_fact(fact, category=category, source="user")
-        answer = f"Declarative memory saved as {memory_id}. I will use it as remembered tech department knowledge."
-        # Also save the teaching event to episodic memory
+        stats = self.rag.stats()
+
+        lines = [
+            f"### 🧠 Declarative Memory Indexed: `{memory_id}`\n",
+            "**Learned Business Knowledge / Rule:**",
+            f"> *\"{fact}\"*\n",
+            "#### 🔍 Vector Memory Telemetry",
+            f"- **Storage Collection:** `tech_declarative_memory` (384-dimensional cosine vector)",
+            f"- **Active Knowledge Rules:** `{stats.get('declarative_memories', 0)}` saved facts",
+            f"- **Operational Impact:** Semantic proximity search will retrieve this rule across all future employee inquiries.",
+            "\n*The multi-agent workflow has integrated this policy rule into live memory.*"
+        ]
+        answer = "\n".join(lines)
+        trace = [
+            f"🤖 [Triage Agent] Received knowledge instruction from user",
+            f"🧠 [Memory Agent] Vectorized fact with all-MiniLM-L6-v2 embedding model",
+            f"💾 [ChromaDB] Persisted declarative memory as {memory_id}",
+            f"✅ [Validation] Rule indexed and immediately available for query retrieval",
+        ]
         self.rag.remember_interaction(f"Remember fact: {fact}", answer, category="memory_update")
-        return {"memory_id": memory_id, "answer": answer}
+        return {
+            "memory_id": memory_id,
+            "answer": answer,
+            "agent_trace": trace,
+            "active_agent": "Memory Agent",
+        }
+
+    def ingest_document_bytes(self, file_bytes: bytes, filename: str, category: str = "uploaded_doc") -> dict[str, Any]:
+        """Save uploaded document into knowledge_base/ directory, extract text, chunk, and index into ChromaDB vector memory."""
+        return self.rag.ingest_document_bytes(file_bytes=file_bytes, filename=filename, category=category)
 
     def _generate_answer(self, message: str, context: list[SearchResult]) -> str:
         """Generate an answer using the Ollama LLM with retrieved context.

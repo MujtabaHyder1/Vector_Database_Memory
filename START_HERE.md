@@ -1,242 +1,125 @@
-# Vector Database Memory Assignment - Submission Ready
+# Tech Department Support Agent — Quickstart & Onboarding Guide
 
 **Status**: ✅ COMPLETE AND VERIFIED  
-**Date**: August 29, 2026  
-**Location**: `Desktop/Vector_Database_Memory_Assignment/`  
-**Program**: Employability Life - Agentic AI & RAG (Week 4)
+**Date**: September 2026  
+**Program**: Employability Life — Agentic AI & RAG (Week 4)  
+**System**: LangGraph Multi-Agent Architecture with ChromaDB Vector Memory
 
 ---
 
-## 📦 Contents
+## 📦 What is in this Repository?
 
-This folder contains your complete Vector Database Memory assignment with all required components:
+This repository contains a production-grade, stateful AI tech department support system featuring an **8-Node LangGraph Multi-Agent Team**, **8 Isolated Domain Tools**, **4 Persistent ChromaDB Vector Collections**, **Enterprise Document / PDF Ingestion via PyPDF**, and a **Modern Streamlit Dashboard with a Unified ChatGPT-Style Input Bar (Voice Dictation + Drag-and-Drop PDF Upload)**.
 
-### **Main Deliverable**
-- **Vector_Database_Memory.ipynb** (26.7 KB)
-  - 28 cells (14 markdown, 14 code)
-  - Complete implementation of stateful agent memory system
-  - Ready to run in Jupyter Notebook
+### Core Modules
 
-### **Documentation**
-- **README.md** (10.8 KB)
-  - Overview and key concepts
-  - Quick start guide
-  - System architecture
-  - Use cases and technical details
+| Component | File | Description |
+|---|---|---|
+| **Multi-Agent Orchestrator** | [`agent_graph.py`](file:///e:/Projects/Vector_Database_Memory/agent_graph.py) | LangGraph StateGraph coordinator with 8 specialized agent nodes & resilient failure handling |
+| **Domain Tools Layer** | [`tools.py`](file:///e:/Projects/Vector_Database_Memory/tools.py) | 8 enterprise IT tools: Hardware Catalog, Network Diag, SLA Calculator, Ticket Creation, Software Compatibility, Escalation Matrix, Compliance Check, Bulk Ticket Analysis |
+| **RAG & Memory Engine** | [`tech_agent.py`](file:///e:/Projects/Vector_Database_Memory/tech_agent.py) | ChromaDB manager with 4 persistent collections, `pypdf` document chunking pipeline, and Ollama auto-starter daemon |
+| **User Interface** | [`streamlit_app.py`](file:///e:/Projects/Vector_Database_Memory/streamlit_app.py) | Streamlit app with unified ChatGPT bottom pill bar (`st.chat_input` with audio dictation + PDF upload), Ticket Central, and Visual Graph |
+| **Policy Knowledge Base** | [`knowledge_base/tech_department_policies.md`](file:///e:/Projects/Vector_Database_Memory/knowledge_base/tech_department_policies.md) | Standard enterprise IT policy base covering equipment, budgets, SLAs, and security |
 
-- **SRS.md** (14.5 KB)
-  - Software Requirements Specification
-  - Functional and non-functional requirements
-  - Use case scenarios
-  - Acceptance criteria
+### Documentation Suite
 
-### **Support Files**
-- **COMPLETION_SUMMARY.md** (7.3 KB)
-  - Verification checklist
-  - Test results
-  - Learning outcomes
-
-- **.gitignore** (0.7 KB)
-  - Version control configuration
+- [`README.md`](file:///e:/Projects/Vector_Database_Memory/README.md) — Comprehensive architecture overview, quickstart, and feature guide.
+- [`ARCHITECTURE.md`](file:///e:/Projects/Vector_Database_Memory/ARCHITECTURE.md) — Deep architectural specification with Mermaid flowcharts and data contracts.
+- [`SRS.md`](file:///e:/Projects/Vector_Database_Memory/SRS.md) — Full Software Requirements Specification (9 Functional + 5 Non-Functional requirements).
+- [`COMPLETION_SUMMARY.md`](file:///e:/Projects/Vector_Database_Memory/COMPLETION_SUMMARY.md) — Deliverables summary and 12-point live verification report.
 
 ---
 
-## ✅ Verification Status
+## 🚀 How to Run
 
-| Component | Status | Count |
-|-----------|--------|-------|
-| Notebook cells | ✅ | 28 |
-| Classes defined | ✅ | 7/7 |
-| Methods implemented | ✅ | 8/8 |
-| Memory types | ✅ | 4/4 |
-| Demonstrations | ✅ | 7+ |
-| Documentation files | ✅ | 4/4 |
-| Required imports | ✅ | 8/8 |
-
-**Result: ALL CHECKS PASSED** ✅
-
----
-
-## 🚀 How to Use
-
-### Option 1: Run the Notebook Directly
-```bash
-# Navigate to this folder
-cd Desktop/Vector_Database_Memory_Assignment
-
-# Open in Jupyter
-jupyter notebook Vector_Database_Memory.ipynb
+### Step 1: Activate Virtual Environment
+Open PowerShell in the project directory:
+```powershell
+.\.venv\Scripts\activate
 ```
 
-### Option 2: Run Individual Cells
-1. Open `Vector_Database_Memory.ipynb` in Jupyter
-2. Execute cells in order (top to bottom)
-3. Dependencies install automatically
-4. Watch the demonstrations of agent learning
+### Step 2: Verify Dependencies (Optional)
+All required dependencies (`langgraph`, `chromadb`, `sentence-transformers`, `pypdf`, `torchvision`, `SpeechRecognition`) are installed:
+```powershell
+pip install -r requirements.txt
+```
+
+### Step 3: Verify Domain Tools
+Run the standalone verification suite for all 8 domain tools:
+```powershell
+python tools.py
+```
+*Expected: 8/8 domain tools execute successfully with structured outputs.*
+
+### Step 4: Launch the Streamlit App
+```powershell
+streamlit run streamlit_app.py
+```
+Then navigate to:
+👉 **`http://localhost:8501`**
+
+> [!NOTE]
+> **Silent Ollama Auto-Starter**: You do NOT need to manually launch Ollama in a separate terminal. The application's `OllamaClient.ensure_running()` method will automatically detect if the Ollama daemon is offline and spawn `ollama serve` in the background. If Ollama is not installed, the system cleanly triggers its deterministic structured fallback.
 
 ---
 
-## 📋 What's Implemented
+## 💡 Key Features & Interaction Modes
 
-### Core Classes
-- **VectorMemoryManager** - Multi-type vector database with ChromaDB
-- **MemoryAwareHRAgent** - Stateful agent that learns over time
-- **MemoryEntry** - Base structure for all memory types
-- **ConversationMemory** - Stores queries and responses
-- **LearnedFact** - Stores discovered knowledge
-- **InteractionPattern** - Stores learned patterns
-- **ErrorMemory** - Stores mistakes to learn from
+### 1. Unified ChatGPT-Style Bottom Pill Bar
+Located at the bottom of the screen (matching ChatGPT's modern ergonomics):
+- **Text Queries**: Type any tech support or policy inquiry.
+- **Voice Dictation**: Click the microphone icon directly inside the input pill bar to speak your issue. The audio is transcribed via Google Speech Recognition.
+- **Drag-and-Drop PDF Upload**: Click the attachment (+) button inside the input pill bar or sidebar to upload an enterprise policy PDF. The system automatically extracts text via `pypdf`, chunks it by page, computes vector embeddings, and stores it in `tech_declarative_memory`.
 
-### Key Features
-✅ Semantic memory retrieval using vector similarity  
-✅ Multiple memory types for different purposes  
-✅ Agent learning and continuous improvement  
-✅ Multi-agent memory sharing  
-✅ Persistent storage capability  
-✅ Efficient O(log n) retrieval  
+### 2. In-Chat Automated Ticket Generation
+- Whenever an employee reports an issue (e.g. *"I lost my laptop"* or *"VPN is broken"*), the LangGraph team identifies the need for a ticket, calls `ticket_creation_tool`, computes real-time SLA with `sla_calculator_tool`, logs the ticket into ChromaDB, and returns the ticket ID (`TECH-{DATE}-{HEX}`) directly in the chat.
 
-### Demonstrations Included
-✅ Agent processing 9 queries with learning  
-✅ Storing 4+ facts with confidence scores  
-✅ Logging 2+ errors for learning  
-✅ Recognizing interaction patterns  
-✅ Semantic similarity retrieval  
-✅ Multi-agent memory sharing  
-✅ Improvement metrics and reporting  
+### 3. Ticket Central Tab
+- Switch to the **Ticket Central** tab in the UI to view active tickets or submit fast-track device requests and incident reports.
+
+### 4. Live Visual Graph & Agent Step Tracking
+- Switch to the **Visual Graph** tab to inspect the real-time execution flow across the 8 LangGraph nodes.
+- In the chat view, expand the live step pill (`st.status`) to view which tools were called and what context was retrieved.
+
+### 5. Slash Commands
+Type slash commands directly into the chat input bar:
+- `/help` — List all available commands.
+- `/stats` — Show live document counts across all 4 ChromaDB collections.
+- `/policy <query>` — Search company policies directly.
+- `/memory <query>` — Search episodic and declarative memories.
+- `/remember <fact>` — Teach the agent a persistent operational rule.
 
 ---
 
-## 📊 Project Statistics
-
-| Metric | Value |
-|--------|-------|
-| Total code lines | ~428 |
-| Documentation lines | ~900 |
-| Total file size | 60.0 KB |
-| Classes defined | 7 |
-| Methods implemented | 8+ |
-| Type hints | 10+ |
-| Docstrings | 18+ |
-
----
-
-## 🎯 Learning Outcomes
-
-After completing this assignment, you understand:
-
-✓ Building persistent memory systems for agents  
-✓ Vector databases for semantic retrieval  
-✓ Multiple memory types for different purposes  
-✓ Agent learning and continuous improvement  
-✓ Organizational learning patterns  
-✓ Production-ready memory systems  
-✓ Scaling vector databases  
-✓ Best practices for stateful agents  
-
----
-
-## 🔍 Builds on Previous Weeks
-
-### Week 2: Vector Embeddings & Semantic Search
-- ChromaDB vector database
-- Embedding models (all-MiniLM-L6-v2)
-- Cosine similarity scoring
-
-### Week 3: RAG Pipelines
-- Document retrieval concepts
-- Context-aware generation
-- Grounded responses
-
-### Week 4: Vector Database Memory (This)
-- **Stateful agent systems**
-- **Persistent memory across conversations**
-- **Agent learning and improvement**
-- **Multi-agent knowledge sharing**
-
----
-
-## 🎓 Key Concepts Demonstrated
-
-### 1. Semantic Memory Retrieval
-Finds "laptop", "computer", "equipment" as related concepts despite different wording.
-
-### 2. Multiple Memory Types
-- **Conversation**: Maintains context
-- **Facts**: Stores discovered knowledge
-- **Patterns**: Recognizes behaviors
-- **Errors**: Learns from mistakes
-
-### 3. Stateful Agents
-Maintains state across conversations, learns over time, improves responses.
-
-### 4. Organizational Learning
-Multiple agents share memory automatically, ensuring consistent knowledge.
-
----
-
-## 📞 Support & Extension
-
-### To Run Successfully
-1. Python 3.8+ required
-2. Dependencies: chromadb, sentence-transformers, pandas, numpy
-3. All dependencies auto-install on notebook startup
-4. Jupyter Notebook required
-
-### Next Steps for Enhancement
-1. Implement memory decay for temporal relevance
-2. Add user-specific memory isolation
-3. Implement confidence scoring for facts
-4. Add memory visualization dashboard
-5. Extend to distributed memory systems
-
----
-
-## ✨ Quality Highlights
-
-- **Production-Ready**: Error handling, performance optimization included
-- **Well-Documented**: Comprehensive README and SRS documentation
-- **Educational**: Progressive complexity with clear explanations
-- **Verified**: All components tested and working
-- **Scalable**: Designed for organizational use
-
----
-
-## 🎉 Submission Checklist
-
-- [x] All files present and readable
-- [x] Notebook is valid JSON
-- [x] All classes and methods implemented
-- [x] All demonstrations working
-- [x] Documentation complete
-- [x] Code follows best practices
-- [x] Verification tests passed
-- [x] Ready for submission
-
----
-
-## 📁 File Structure
+## 📁 Repository Structure
 
 ```
-Vector_Database_Memory_Assignment/
-├── Vector_Database_Memory.ipynb      (Main notebook)
-├── README.md                         (Documentation)
-├── SRS.md                           (Requirements)
-├── COMPLETION_SUMMARY.md            (Verification)
-└── .gitignore                       (Git config)
+Vector_Database_Memory/
+├── agent_graph.py                    # LangGraph 8-node multi-agent orchestrator
+├── tools.py                          # 8 isolated domain tools
+├── tech_agent.py                     # Core agent, ChromaDB RAG, PDF ingestion, Ollama auto-starter
+├── streamlit_app.py                  # Streamlit dashboard (voice, PDF upload, ticket central)
+├── knowledge_base/
+│   └── tech_department_policies.md   # Markdown policy document (6 sections)
+├── .tech_agent_memory/               # ChromaDB persistent vector storage directory
+├── ARCHITECTURE.md                   # Full architectural specification & Mermaid diagrams
+├── SRS.md                            # Software Requirements Specification
+├── README.md                         # Main repository guide
+├── START_HERE.md                     # This quickstart onboarding document
+├── COMPLETION_SUMMARY.md             # Test results & deliverables summary
+├── requirements.txt                  # Python dependencies
+└── runtime.txt                       # Python runtime specification
 ```
 
 ---
 
-## 🚀 Ready to Submit!
+## 🎯 Verification Checklist
 
-All files are organized, verified, and ready for submission to Employability Life.
-
-**Total Project Size**: 60.0 KB  
-**Status**: ✅ Complete and Production-Ready  
-**Date**: August 29, 2026  
-
----
-
-For questions or issues, refer to README.md for setup instructions or SRS.md for requirements details.
-
-**Happy Learning! 🎓**
+- [x] Streamlit web application running at `http://localhost:8501`
+- [x] LangGraph 8-node multi-agent team (`agent_graph.py`)
+- [x] 8 domain tools in [`tools.py`](file:///e:/Projects/Vector_Database_Memory/tools.py) with unit verification
+- [x] 4 ChromaDB persistent vector collections (`tech_policy_rag`, `tech_episodic_memory`, `tech_declarative_memory`, `tech_tickets`)
+- [x] Enterprise document & PDF ingestion pipeline (`pypdf`)
+- [x] Unified ChatGPT-style bottom pill bar with audio dictation and file attachment
+- [x] Ollama background auto-starter (`ensure_running`)
+- [x] All documentation updated and synchronized across the repository
