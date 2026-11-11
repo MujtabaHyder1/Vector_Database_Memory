@@ -18,6 +18,9 @@
 # ============================================================================
 
 from __future__ import annotations
+from tech_agent import OllamaClient, TechDepartmentAgent, TechMemoryRAG
+import tools
+import streamlit as st
 
 import html
 import json
@@ -30,9 +33,6 @@ from typing import Any, Dict, List, Optional
 os.environ["TQDM_DISABLE"] = "1"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 
-import streamlit as st
-import tools
-from tech_agent import OllamaClient, TechDepartmentAgent, TechMemoryRAG
 
 logger = logging.getLogger("tech_agent.ui")
 
@@ -217,7 +217,7 @@ st.markdown(
         }
 
         /* ====================================================================
-           ChatGPT-Style Floating Pill Chat Input Bar
+           GPT-Style Floating Pill Chat Input Bar
            ==================================================================== */
         [data-testid="stBottom"] {
             background: linear-gradient(180deg, rgba(11, 15, 25, 0) 0%, rgba(11, 15, 25, 0.95) 40%, rgba(11, 15, 25, 1) 100%) !important;
@@ -406,7 +406,6 @@ def transcribe_audio_bytes(audio_bytes: bytes) -> Optional[str]:
         return None
 
 
-
 # Ensure messages session state is initialized before any sidebar form submissions
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -443,14 +442,17 @@ with st.sidebar:
     # LLM Settings
     with st.expander("⚙️ LLM & Engine Config", expanded=False):
         model_name = st.text_input("Ollama Model", value="mistral")
-        base_url = st.text_input("Ollama Endpoint", value="http://localhost:11434")
+        base_url = st.text_input(
+            "Ollama Endpoint", value="http://localhost:11434")
 
     # Load agent safely with cache bust safeguard
     try:
-        agent = load_support_system(model_name, base_url, version="v4.0-pdf-kb")
+        agent = load_support_system(
+            model_name, base_url, version="v4.0-pdf-kb")
         if not hasattr(agent, "ingest_document_bytes"):
             st.cache_resource.clear()
-            agent = load_support_system(model_name, base_url, version="v4.1-pdf-kb")
+            agent = load_support_system(
+                model_name, base_url, version="v4.1-pdf-kb")
         stats = agent.rag.stats()
     except Exception as exc:
         st.error(f"Failed to load agent: {exc}")
@@ -500,7 +502,8 @@ with st.sidebar:
 
     # Form 1: Teach Declarative Knowledge & Upload Documents
     with st.expander("🧠 Teach Agent Knowledge", expanded=False):
-        st.caption("Add business rules or upload corporate policy documents (PDF, TXT, MD).")
+        st.caption(
+            "Add business rules or upload corporate policy documents (PDF, TXT, MD).")
         with st.form("teach_fact_form", clear_on_submit=True):
             fact_text = st.text_area(
                 "Fact or Operating Rule",
@@ -511,17 +514,21 @@ with st.sidebar:
                 type=["pdf", "txt", "md"],
                 help="Upload company SOPs, manuals, or PDF policies to vectorize into ChromaDB.",
             )
-            submit_fact = st.form_submit_button("💾 Save Knowledge & Index Document")
+            submit_fact = st.form_submit_button(
+                "💾 Save Knowledge & Index Document")
 
         if submit_fact:
             if uploaded_doc is not None:
                 with st.spinner(f"Memory Agent parsing and vectorizing {uploaded_doc.name}..."):
-                    ingest_fn = getattr(agent, "ingest_document_bytes", None) or getattr(agent.rag, "ingest_document_bytes", None)
+                    ingest_fn = getattr(agent, "ingest_document_bytes", None) or getattr(
+                        agent.rag, "ingest_document_bytes", None)
                     if not ingest_fn:
                         st.cache_resource.clear()
-                        agent = load_support_system(model_name, base_url, version="v4.2-pdf-reload")
-                        ingest_fn = getattr(agent, "ingest_document_bytes", None) or getattr(agent.rag, "ingest_document_bytes", None)
-                    
+                        agent = load_support_system(
+                            model_name, base_url, version="v4.2-pdf-reload")
+                        ingest_fn = getattr(agent, "ingest_document_bytes", None) or getattr(
+                            agent.rag, "ingest_document_bytes", None)
+
                     res = ingest_fn(
                         file_bytes=uploaded_doc.getvalue(),
                         filename=uploaded_doc.name,
@@ -543,10 +550,12 @@ with st.sidebar:
                                 "status": "completed",
                             }
                         )
-                        st.toast(f"📄 Stored in knowledge_base/ & vectorized: {uploaded_doc.name}", icon="✅")
+                        st.toast(
+                            f"📄 Stored in knowledge_base/ & vectorized: {uploaded_doc.name}", icon="✅")
                         st.rerun()
                     else:
-                        st.error(res.get("answer", "Failed to process document."))
+                        st.error(
+                            res.get("answer", "Failed to process document."))
 
             elif fact_text.strip():
                 with st.spinner("Memory Agent embedding and indexing in declarative memory..."):
@@ -567,10 +576,12 @@ with st.sidebar:
                             "status": "completed",
                         }
                     )
-                    st.toast(f"🧠 Knowledge rule saved: {res['memory_id']}", icon="💡")
+                    st.toast(
+                        f"🧠 Knowledge rule saved: {res['memory_id']}", icon="💡")
                     st.rerun()
             else:
-                st.warning("Please provide a fact or select a PDF / document to upload.")
+                st.warning(
+                    "Please provide a fact or select a PDF / document to upload.")
 
     # Form 2: Submit Device Request
     with st.expander("💻 Submit Device Request", expanded=False):
@@ -591,7 +602,8 @@ with st.sidebar:
                     'Jabra Evolve2 75 ANC Headset',
                 ],
             )
-            req_mode = st.selectbox("Work Location Mode", ["Hybrid", "Remote", "Office"])
+            req_mode = st.selectbox("Work Location Mode", [
+                                    "Hybrid", "Remote", "Office"])
             req_reason = st.text_area("Business Justification *")
             req_date = st.date_input("Target Date")
             submit_dev = st.form_submit_button("🚀 Submit Device Request")
@@ -634,7 +646,8 @@ with st.sidebar:
                             "status": "completed",
                         }
                     )
-                    st.toast(f"🎫 Hardware ticket dispatched: {res['ticket_id']}", icon="✅")
+                    st.toast(
+                        f"🎫 Hardware ticket dispatched: {res['ticket_id']}", icon="✅")
                     st.rerun()
             else:
                 st.error("Please fill in all required fields marked with *.")
@@ -644,9 +657,12 @@ with st.sidebar:
         with st.form("sidebar_device_issue", clear_on_submit=True):
             iss_emp = st.text_input("Employee Name *")
             iss_tag = st.text_input("Device / Asset Tag *")
-            iss_urgency = st.selectbox("Urgency", ["Normal", "High", "Critical"])
-            iss_summary = st.text_area("Issue Description *", placeholder="What went wrong?")
-            iss_steps = st.text_area("Troubleshooting Attempted", placeholder="Restarted, cleared cache, etc.")
+            iss_urgency = st.selectbox(
+                "Urgency", ["Normal", "High", "Critical"])
+            iss_summary = st.text_area(
+                "Issue Description *", placeholder="What went wrong?")
+            iss_steps = st.text_area(
+                "Troubleshooting Attempted", placeholder="Restarted, cleared cache, etc.")
             submit_iss = st.form_submit_button("⚠️ Log Incident Ticket")
 
         if submit_iss:
@@ -684,7 +700,8 @@ with st.sidebar:
                             "status": "completed",
                         }
                     )
-                    st.toast(f"🚨 Incident logged: {res['ticket_id']}", icon="🛠️")
+                    st.toast(
+                        f"🚨 Incident logged: {res['ticket_id']}", icon="🛠️")
                     st.rerun()
             else:
                 st.error("Please fill in all required fields marked with *.")
@@ -776,7 +793,8 @@ with tab_chat:
         with st.chat_message(msg["role"]):
             # If assistant message has an active agent, show badge
             if msg["role"] == "assistant" and msg.get("active_agent"):
-                badge_class = "recovered" if msg.get("status") == "recovered" else ""
+                badge_class = "recovered" if msg.get(
+                    "status") == "recovered" else ""
                 st.markdown(
                     f"""<div class="agent-pill {badge_class}">Active Agent: {msg.get('active_agent')}</div>""",
                     unsafe_allow_html=True,
@@ -817,9 +835,10 @@ with tab_chat:
     # Process pending prompt (from typing, quick buttons, or voice mode)
     if st.session_state.get("pending_prompt"):
         active_prompt = st.session_state.pop("pending_prompt")
-        
+
         # Display user message
-        st.session_state.messages.append({"role": "user", "content": active_prompt})
+        st.session_state.messages.append(
+            {"role": "user", "content": active_prompt})
         with st.chat_message("user"):
             st.markdown(active_prompt)
 
@@ -838,7 +857,8 @@ with tab_chat:
             try:
                 # Execute multi-agent graph with step callback
                 try:
-                    result = agent.answer(active_prompt, step_callback=on_agent_step)
+                    result = agent.answer(
+                        active_prompt, step_callback=on_agent_step)
                 except TypeError:
                     result = agent.answer(active_prompt)
 
@@ -872,7 +892,8 @@ with tab_chat:
                 }
 
             # Render response
-            badge_class = "recovered" if result.get("status") == "recovered" else ""
+            badge_class = "recovered" if result.get(
+                "status") == "recovered" else ""
             st.markdown(
                 f"""<div class="agent-pill {badge_class}">Active Agent: {result.get('active_agent', 'Tech Agent')}</div>""",
                 unsafe_allow_html=True,
@@ -880,7 +901,8 @@ with tab_chat:
             st.markdown(result["answer"])
 
             # Voice TTS
-            render_tts_player(result["answer"], f"msg_{len(st.session_state.messages)}")
+            render_tts_player(result["answer"],
+                              f"msg_{len(st.session_state.messages)}")
 
             # Sources
             if result.get("sources"):
@@ -916,23 +938,24 @@ with tab_chat:
     st.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
 
 
-
-
 # ============================================================================
 # TAB 2: Ticket Central (Search, Inspect, and Filter Company Tickets)
 # ============================================================================
 with tab_tickets:
     st.markdown("### 🎫 Corporate IT Ticket Central")
-    st.caption("All tickets are indexed in the ChromaDB `tech_tickets` collection with cosine similarity vectors.")
+    st.caption(
+        "All tickets are indexed in the ChromaDB `tech_tickets` collection with cosine similarity vectors.")
 
     with st.expander("➕ Fast-Track Ticket Creation (Direct Submission)", expanded=False):
-        tt_sub_type = st.radio("Ticket Category", ["Device Request", "Technical Incident"], horizontal=True, key="tc_cat_radio")
+        tt_sub_type = st.radio("Ticket Category", [
+                               "Device Request", "Technical Incident"], horizontal=True, key="tc_cat_radio")
         if tt_sub_type == "Device Request":
             with st.form("tc_dev_form", clear_on_submit=True):
                 c1, c2 = st.columns(2)
                 with c1:
                     tc_emp = st.text_input("Employee Name *", key="tc_dev_emp")
-                    tc_mgr = st.text_input("Approving Manager *", key="tc_dev_mgr")
+                    tc_mgr = st.text_input(
+                        "Approving Manager *", key="tc_dev_mgr")
                 with c2:
                     tc_dept = st.text_input("Department *", key="tc_dev_dept")
                     tc_dev = st.selectbox(
@@ -949,7 +972,8 @@ with tab_tickets:
                         ],
                         key="tc_dev_select",
                     )
-                tc_reason = st.text_area("Business Justification *", key="tc_dev_reason")
+                tc_reason = st.text_area(
+                    "Business Justification *", key="tc_dev_reason")
                 tc_submit = st.form_submit_button("🚀 Submit Device Request")
                 if tc_submit:
                     if tc_emp and tc_dept and tc_mgr and tc_reason:
@@ -986,20 +1010,27 @@ with tab_tickets:
                                 "status": "completed",
                             }
                         )
-                        st.toast(f"Ticket dispatched: {res['ticket_id']}", icon="🎫")
+                        st.toast(
+                            f"Ticket dispatched: {res['ticket_id']}", icon="🎫")
                         st.rerun()
                     else:
-                        st.error("Please fill in required fields marked with *.")
+                        st.error(
+                            "Please fill in required fields marked with *.")
         else:
             with st.form("tc_iss_form", clear_on_submit=True):
                 c1, c2 = st.columns(2)
                 with c1:
-                    tc_i_emp = st.text_input("Employee Name *", key="tc_iss_emp")
-                    tc_i_tag = st.text_input("Device / Asset Tag *", key="tc_iss_tag")
+                    tc_i_emp = st.text_input(
+                        "Employee Name *", key="tc_iss_emp")
+                    tc_i_tag = st.text_input(
+                        "Device / Asset Tag *", key="tc_iss_tag")
                 with c2:
-                    tc_i_urg = st.selectbox("Urgency", ["Normal", "High", "Critical"], key="tc_iss_urg")
-                tc_i_sum = st.text_area("Issue Description *", key="tc_iss_sum")
-                tc_i_steps = st.text_area("Troubleshooting Attempted", key="tc_iss_steps")
+                    tc_i_urg = st.selectbox(
+                        "Urgency", ["Normal", "High", "Critical"], key="tc_iss_urg")
+                tc_i_sum = st.text_area(
+                    "Issue Description *", key="tc_iss_sum")
+                tc_i_steps = st.text_area(
+                    "Troubleshooting Attempted", key="tc_iss_steps")
                 tc_i_submit = st.form_submit_button("⚠️ Log Incident Ticket")
                 if tc_i_submit:
                     if tc_i_emp and tc_i_tag and tc_i_sum:
@@ -1034,24 +1065,30 @@ with tab_tickets:
                                 "status": "completed",
                             }
                         )
-                        st.toast(f"Incident logged: {res['ticket_id']}", icon="🚨")
+                        st.toast(
+                            f"Incident logged: {res['ticket_id']}", icon="🚨")
                         st.rerun()
                     else:
-                        st.error("Please fill in required fields marked with *.")
+                        st.error(
+                            "Please fill in required fields marked with *.")
 
     col_t1, col_t2 = st.columns([3, 1])
     with col_t1:
-        ticket_search = st.text_input("🔍 Search Tickets (by ID, employee name, or keyword)", placeholder="e.g. TECH-, MacBook, VPN")
+        ticket_search = st.text_input(
+            "🔍 Search Tickets (by ID, employee name, or keyword)", placeholder="e.g. TECH-, MacBook, VPN")
     with col_t2:
-        ticket_type_filter = st.selectbox("Filter Type", ["All", "device_request", "device_issue"])
+        ticket_type_filter = st.selectbox(
+            "Filter Type", ["All", "device_request", "device_issue"])
 
     # Fetch tickets using domain tool
-    ticket_res = tools.ticket_lookup_tool(agent.rag, query=ticket_search, limit=50)
+    ticket_res = tools.ticket_lookup_tool(
+        agent.rag, query=ticket_search, limit=50)
 
     if ticket_res.success and ticket_res.output:
         all_tickets = ticket_res.output
         if ticket_type_filter != "All":
-            all_tickets = [t for t in all_tickets if t.get("ticket_type") == ticket_type_filter]
+            all_tickets = [t for t in all_tickets if t.get(
+                "ticket_type") == ticket_type_filter]
 
         st.markdown(f"**Found {len(all_tickets)} matching tickets:**")
 
@@ -1076,7 +1113,8 @@ with tab_tickets:
                     unsafe_allow_html=True,
                 )
     else:
-        st.info("No tickets recorded yet. Create a request or issue using the sidebar forms!")
+        st.info(
+            "No tickets recorded yet. Create a request or issue using the sidebar forms!")
 
 
 # ============================================================================
@@ -1084,16 +1122,20 @@ with tab_tickets:
 # ============================================================================
 with tab_memory:
     st.markdown("### 🧠 Memory & Knowledge Vault")
-    st.caption("Inspect the 4 ChromaDB vector collections powering RAG context & persistent state.")
+    st.caption(
+        "Inspect the 4 ChromaDB vector collections powering RAG context & persistent state.")
 
     mem_tab_policy, mem_tab_declarative, mem_tab_episodic = st.tabs(
-        ["📜 Company Policy Vectors", "💡 Declarative Knowledge", "💬 Episodic Conversations"]
+        ["📜 Company Policy Vectors", "💡 Declarative Knowledge",
+            "💬 Episodic Conversations"]
     )
 
     with mem_tab_policy:
-        st.markdown("**Ingested Policy Sections from `knowledge_base/tech_department_policies.md`:**")
+        st.markdown(
+            "**Ingested Policy Sections from `knowledge_base/tech_department_policies.md`:**")
         try:
-            policy_data = agent.rag.policy_collection.get(include=["documents", "metadatas"])
+            policy_data = agent.rag.policy_collection.get(
+                include=["documents", "metadatas"])
             p_ids = policy_data.get("ids", [])
             p_docs = policy_data.get("documents", [])
             p_metas = policy_data.get("metadatas", [])
@@ -1110,7 +1152,8 @@ with tab_memory:
     with mem_tab_declarative:
         st.markdown("**User-Taught Facts & System Operating Rules:**")
         try:
-            decl_data = agent.rag.declarative_collection.get(include=["documents", "metadatas"])
+            decl_data = agent.rag.declarative_collection.get(
+                include=["documents", "metadatas"])
             d_ids = decl_data.get("ids", [])
             d_docs = decl_data.get("documents", [])
             d_metas = decl_data.get("metadatas", [])
@@ -1128,7 +1171,8 @@ with tab_memory:
     with mem_tab_episodic:
         st.markdown("**Past Interactions Auto-Saved by Memory Agent:**")
         try:
-            ep_data = agent.rag.episodic_collection.get(include=["documents", "metadatas"])
+            ep_data = agent.rag.episodic_collection.get(
+                include=["documents", "metadatas"])
             e_ids = ep_data.get("ids", [])
             e_docs = ep_data.get("documents", [])
             e_metas = ep_data.get("metadatas", [])
@@ -1148,22 +1192,27 @@ with tab_memory:
 # ============================================================================
 with tab_tools:
     st.markdown("### 🛠️ IT Diagnostic Tools Sandbox")
-    st.caption("Directly test the domain tools used by the LangGraph multi-agent team.")
+    st.caption(
+        "Directly test the domain tools used by the LangGraph multi-agent team.")
 
     tool_select = st.selectbox(
         "Select Tool to Test",
-        ["Hardware Catalog Lookup", "Network & VPN Diagnostics", "SLA & Escalation Calculator", "Internal Infrastructure Status"],
+        ["Hardware Catalog Lookup", "Network & VPN Diagnostics",
+            "SLA & Escalation Calculator", "Internal Infrastructure Status"],
     )
 
     if tool_select == "Hardware Catalog Lookup":
         st.markdown("#### 💻 Hardware Catalog Tool")
         c1, c2 = st.columns(2)
         with c1:
-            hw_cat = st.selectbox("Category", ["all", "Laptop", "Monitor", "Docking Station", "Peripherals", "Headset"])
+            hw_cat = st.selectbox("Category", [
+                                  "all", "Laptop", "Monitor", "Docking Station", "Peripherals", "Headset"])
         with c2:
-            hw_max_price = st.slider("Maximum Price (USD)", min_value=100, max_value=4000, value=3000, step=100)
+            hw_max_price = st.slider(
+                "Maximum Price (USD)", min_value=100, max_value=4000, value=3000, step=100)
 
-        hw_res = tools.hardware_catalog_tool(category=hw_cat, budget_max=hw_max_price)
+        hw_res = tools.hardware_catalog_tool(
+            category=hw_cat, budget_max=hw_max_price)
         if hw_res.success:
             st.markdown(f"**Found {len(hw_res.output)} matching devices:**")
             st.dataframe(hw_res.output, use_container_width=True)
@@ -1174,15 +1223,18 @@ with tab_tools:
         st.markdown("#### 🌐 Network Diagnostics Tool")
         c1, c2 = st.columns(2)
         with c1:
-            diag_issue = st.selectbox("Issue Category", ["vpn", "wifi", "crash", "access"])
+            diag_issue = st.selectbox(
+                "Issue Category", ["vpn", "wifi", "crash", "access"])
         with c2:
             diag_os = st.selectbox("Target OS", ["windows", "macos", "linux"])
 
-        diag_res = tools.network_diagnostics_tool(issue_type=diag_issue, os_type=diag_os)
+        diag_res = tools.network_diagnostics_tool(
+            issue_type=diag_issue, os_type=diag_os)
         if diag_res.success:
             out = diag_res.output
             st.markdown(f"**Playbook:** `{out.get('title')}`")
-            st.markdown(f"**Suggested Urgency:** `{out.get('suggested_priority')}` | **Team:** `{out.get('escalation_team')}`")
+            st.markdown(
+                f"**Suggested Urgency:** `{out.get('suggested_priority')}` | **Team:** `{out.get('escalation_team')}`")
             st.markdown("**Recommended Remediation Steps:**")
             for s in out.get("recommended_steps", []):
                 st.write(f"- {s}")
@@ -1193,11 +1245,14 @@ with tab_tools:
         st.markdown("#### ⏱️ SLA Resolution Calculator Tool")
         c1, c2 = st.columns(2)
         with c1:
-            sla_urg = st.selectbox("Ticket Urgency", ["Normal", "High", "Critical"])
+            sla_urg = st.selectbox(
+                "Ticket Urgency", ["Normal", "High", "Critical"])
         with c2:
-            sla_cat = st.selectbox("Issue Classification", ["general", "vpn", "hardware", "security", "lost_device"])
+            sla_cat = st.selectbox("Issue Classification", [
+                                   "general", "vpn", "hardware", "security", "lost_device"])
 
-        sla_res = tools.sla_calculator_tool(urgency=sla_urg, issue_category=sla_cat)
+        sla_res = tools.sla_calculator_tool(
+            urgency=sla_urg, issue_category=sla_cat)
         if sla_res.success:
             st.json(sla_res.output)
         else:
@@ -1217,9 +1272,9 @@ with tab_tools:
 # ============================================================================
 with tab_system:
     st.markdown("### 📊 System Telemetry & Engine Health")
-    
+
     col_s1, col_s2, col_s3 = st.columns(3)
-    
+
     # Check Ollama
     ollama_ok = False
     try:
@@ -1295,11 +1350,13 @@ if chat_input_val:
     # 2. Voice audio recorded via native microphone inside the pill bar
     if not input_text and hasattr(chat_input_val, "audio") and chat_input_val.audio:
         with st.spinner("🎙️ Transcribing voice recording..."):
-            audio_text = transcribe_audio_bytes(chat_input_val.audio.getvalue())
+            audio_text = transcribe_audio_bytes(
+                chat_input_val.audio.getvalue())
             if audio_text:
                 input_text = audio_text
             else:
-                st.warning("⚠️ Could not clearly transcribe recorded audio. Please try speaking again.")
+                st.warning(
+                    "⚠️ Could not clearly transcribe recorded audio. Please try speaking again.")
 
     # 3. File attachments (if uploaded via '+' button on left of chat input)
     if hasattr(chat_input_val, "files") and chat_input_val.files:
@@ -1310,25 +1367,33 @@ if chat_input_val:
             attached_names.append(fname)
             try:
                 # 1. Automatically store in knowledge_base/ and index in ChromaDB
-                ingest_fn = getattr(agent, "ingest_document_bytes", None) or getattr(agent.rag, "ingest_document_bytes", None)
+                ingest_fn = getattr(agent, "ingest_document_bytes", None) or getattr(
+                    agent.rag, "ingest_document_bytes", None)
                 if ingest_fn:
-                    res_ing = ingest_fn(file_bytes=uf.getvalue(), filename=fname)
+                    res_ing = ingest_fn(
+                        file_bytes=uf.getvalue(), filename=fname)
                     if res_ing.get("success"):
-                        st.toast(f"📄 Stored in knowledge_base/ & vectorized: {fname}", icon="✅")
+                        st.toast(
+                            f"📄 Stored in knowledge_base/ & vectorized: {fname}", icon="✅")
 
                 # 2. Extract preview text for conversational grounding
                 if fname.lower().endswith(".pdf"):
-                    import io, pypdf
+                    import io
+                    import pypdf
                     reader = pypdf.PdfReader(io.BytesIO(uf.getvalue()))
-                    extracted = "\n".join([p.extract_text() or "" for p in reader.pages[:10]]).strip()
+                    extracted = "\n".join(
+                        [p.extract_text() or "" for p in reader.pages[:10]]).strip()
                     if extracted:
-                        attachment_texts.append(f"--- Document Content: {fname} ---\n{extracted[:3500]}")
+                        attachment_texts.append(
+                            f"--- Document Content: {fname} ---\n{extracted[:3500]}")
                 elif fname.lower().endswith((".txt", ".md", ".log", ".json", ".csv")):
                     t_str = uf.getvalue().decode("utf-8", errors="replace").strip()
                     if t_str:
-                        attachment_texts.append(f"--- Document Content: {fname} ---\n{t_str[:3500]}")
+                        attachment_texts.append(
+                            f"--- Document Content: {fname} ---\n{t_str[:3500]}")
             except Exception as exc:
-                logger.warning("Could not process attachment %s: %s", fname, exc)
+                logger.warning(
+                    "Could not process attachment %s: %s", fname, exc)
 
         if not input_text:
             input_text = f"Analyze attached document(s): {', '.join(attached_names)}"
@@ -1339,5 +1404,3 @@ if chat_input_val:
     if input_text:
         st.session_state.pending_prompt = input_text
         st.rerun()
-
-
